@@ -1,0 +1,55 @@
+from datetime import date, datetime
+
+from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
+from app.adapters.capacity import TutorSettingRecord
+from app.live_forecast import build_live_request, map_programme
+from app.models import Workstream
+
+
+def learner(tutor_id: str, programme: str) -> AttendanceLearnerRecord:
+    return AttendanceLearnerRecord(
+        learner_id=f"L-{tutor_id}",
+        tutor_id=tutor_id,
+        tutor_name="Attendance Name",
+        programme_name=programme,
+        start_date=date(2026, 1, 1),
+        expected_end_date=date(2027, 1, 1),
+        status_desc="In Progress",
+        synced_at=datetime(2026, 8, 1),
+    )
+
+
+def test_programme_mapping_uses_config_before_fallback() -> None:
+    assert map_programme("Custom Programme", {"custom programme": Workstream.HOUSING}) == Workstream.HOUSING
+    assert map_programme("Level 3 Pharmacy Technician", {}) == Workstream.PHARMACY
+    assert map_programme("Business Administrator", {}) is None
+
+
+def test_capacity_setting_overrides_inferred_stream_and_default_capacity() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=18,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord("T1", "Tutor One", Workstream.SCIENCE, 42)
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+    assert request.tutors[0].workstream == Workstream.SCIENCE
+    assert request.tutors[0].capacity == 42
+    assert request.existing_learners[0].tutor_id == "T1"
+
+
+def test_unconfigured_idle_tutor_is_not_assigned_to_an_invented_workstream() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=18,
+        attendance_learners=[],
+        attendance_tutors=[AttendanceTutorRecord("T-IDLE", "Idle Tutor")],
+        tutor_settings=[],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+    assert request.tutors == []

@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Skills 4 Capacity Tracker
 
-## Getting Started
+An Azure-hosted internal application for forecasting tutor capacity across Dental, Pharmacy, Housing, and Science.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- React and TypeScript frontend (`frontend`)
+- FastAPI backend (`backend`)
+- PostgreSQL for Capacity Tracker-owned data
+- Azure Container Apps for the web application and nightly forecast job
+
+The Attendance Tool is always treated as a read-only source. Capacity Tracker migrations and writes must target Capacity Tracker-owned infrastructure only.
+
+The narrowly scoped Attendance managed-identity scripts are kept separately in
+`backend/migrations/attendance`. They must be run by the Attendance server's
+configured Microsoft Entra administrator: script `001` against `postgres`, then
+scripts `002` and `003` against `attendance`. They grant `SELECT` only on
+`public.learner_progress` and `public.tutors` and enforce read-only transactions
+for this identity in the Attendance database.
+
+## Local development
+
+Run the API from `backend`:
+
+```powershell
+..\.venv\Scripts\python -m uvicorn app.main:app --reload
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Run the frontend from `frontend`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```powershell
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The frontend falls back to an embedded demonstration forecast when the API is unavailable.
