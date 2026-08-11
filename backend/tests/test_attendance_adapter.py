@@ -20,3 +20,4 @@ def test_tutor_query_is_select_only_and_omits_contact_details() -> None:
     assert "delete " not in normalised
     assert "email" not in normalised
     assert "phone" not in normalised
+    assert "attendance-internal:" in normalised

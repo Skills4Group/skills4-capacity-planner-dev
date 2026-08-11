@@ -34,6 +34,24 @@ def map_programme(
     return None
 
 
+def infer_tutor_workstreams(
+    attendance_learners: list[AttendanceLearnerRecord],
+    programme_mappings: dict[str, Workstream],
+) -> dict[str, Workstream]:
+    counts: dict[str, Counter[Workstream]] = defaultdict(Counter)
+    for learner in attendance_learners:
+        workstream = map_programme(learner.programme_name, programme_mappings)
+        if learner.tutor_id and workstream:
+            counts[learner.tutor_id][workstream] += 1
+    return {
+        tutor_id: sorted(
+            workstreams.items(), key=lambda item: (-item[1], item[0].value)
+        )[0][0]
+        for tutor_id, workstreams in counts.items()
+        if workstreams
+    }
+
+
 def build_live_request(
     *,
     as_of_date: date,
@@ -45,11 +63,7 @@ def build_live_request(
     pipeline_learners: list[PipelineLearner],
 ) -> ForecastRequest:
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
-    inferred: dict[str, Counter[Workstream]] = defaultdict(Counter)
-    for learner in attendance_learners:
-        workstream = map_programme(learner.programme_name, programme_mappings)
-        if learner.tutor_id and workstream:
-            inferred[learner.tutor_id][workstream] += 1
+    inferred = infer_tutor_workstreams(attendance_learners, programme_mappings)
 
     tutor_directory = {tutor.tutor_id: tutor for tutor in attendance_tutors}
     tutors: list[Tutor] = []
@@ -64,10 +78,8 @@ def build_live_request(
                     capacity=setting.capacity,
                 )
             )
-        elif inferred[tutor_id]:
-            workstream = sorted(
-                inferred[tutor_id].items(), key=lambda item: (-item[1], item[0].value)
-            )[0][0]
+        elif tutor_id in inferred:
+            workstream = inferred[tutor_id]
             tutors.append(
                 Tutor(
                     tutor_id=tutor_id,

@@ -38,12 +38,14 @@ class AttendanceLearnerRecord:
 
 ACTIVE_TUTORS_QUERY = """
 SELECT
-    external_system_id::text AS tutor_id,
+    COALESCE(
+        external_system_id::text,
+        'attendance-internal:' || id::text
+    ) AS tutor_id,
     trim(concat_ws(' ', first_name, last_name)) AS tutor_name
 FROM public.tutors
 WHERE active IS TRUE
-  AND external_system_id IS NOT NULL
-ORDER BY external_system_id
+ORDER BY tutor_id
 """
 
 

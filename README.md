@@ -11,6 +11,21 @@ An Azure-hosted internal application for forecasting tutor capacity across Denta
 
 The Attendance Tool is always treated as a read-only source. Capacity Tracker migrations and writes must target Capacity Tracker-owned infrastructure only.
 
+## Tutor administration
+
+The Tutors tab reads the active tutor directory from Attendance and stores all
+capacity and workstream changes in the Capacity-owned
+`capacity.tutor_setting` table. Changes are effective-dated and record the
+signed-in administrator in `updated_by`; no tutor data is written to Attendance.
+
+Administrative writes are protected by Azure Container Apps Easy Auth. The dev
+registration is `Skills4 Capacity Tracker Dev` (application ID
+`bbf24e58-dbf1-4bac-a532-44cb96eb925c`). Anonymous users can view the dashboard,
+but the API trusts identity headers only when `CAPACITY_AUTH_ENABLED=true` and
+permits writes only for object IDs in `CAPACITY_ADMIN_OBJECT_IDS`. The Easy Auth
+client credential is stored by Container Apps, is not part of this repository,
+and must be rotated before 11 August 2027.
+
 The narrowly scoped Attendance managed-identity scripts are kept separately in
 `backend/migrations/attendance`. They must be run by the Attendance server's
 configured Microsoft Entra administrator: script `001` against `postgres`, then

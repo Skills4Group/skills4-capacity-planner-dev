@@ -43,3 +43,26 @@ export interface ForecastResponse {
   }>
 }
 
+export interface TutorAdminRecord {
+  tutor_id: string
+  tutor_name: string
+  workstream: Workstream | null
+  workstream_source: 'saved' | 'inferred' | 'unassigned'
+  capacity: number
+  current_caseload: number
+  remaining_capacity: number
+  has_saved_setting: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+export interface TutorListResponse {
+  as_of_date: string
+  tutors: TutorAdminRecord[]
+}
+
+export interface SessionResponse {
+  authenticated: boolean
+  is_admin: boolean
+  display_name: string | null
+}

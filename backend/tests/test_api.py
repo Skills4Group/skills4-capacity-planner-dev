@@ -24,3 +24,11 @@ def test_demo_forecast_contract() -> None:
         "Science",
     }
 
+
+def test_tutor_write_is_disabled_without_platform_authentication() -> None:
+    response = client.put(
+        "/api/v1/tutors/T1/capacity",
+        headers={"x-ms-client-principal-id": "forged-admin"},
+        json={"capacity": 40, "workstream": "Dental"},
+    )
+    assert response.status_code == 503

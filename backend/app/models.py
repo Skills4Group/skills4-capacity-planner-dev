@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
@@ -124,3 +124,39 @@ class ForecastResponse(BaseModel):
     workstream_months: list[WorkstreamMonth]
     unallocated_learners: list[UnallocatedLearner]
 
+
+class SessionResponse(BaseModel):
+    authenticated: bool
+    is_admin: bool
+    display_name: str | None = None
+
+
+class TutorAdminRecord(BaseModel):
+    tutor_id: str
+    tutor_name: str
+    workstream: Workstream | None
+    workstream_source: str
+    capacity: int
+    current_caseload: int
+    remaining_capacity: int
+    has_saved_setting: bool
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
+
+class TutorListResponse(BaseModel):
+    as_of_date: date
+    tutors: list[TutorAdminRecord]
+
+
+class TutorUpdateRequest(BaseModel):
+    capacity: int = Field(ge=1, le=250)
+    workstream: Workstream
+
+
+class TutorUpdateResponse(BaseModel):
+    tutor_id: str
+    capacity: int
+    workstream: Workstream
+    updated_by: str
+    effective_from: date

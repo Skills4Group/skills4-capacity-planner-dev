@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
 import { UtilisationView } from './UtilisationView'
+import { TutorsView } from './TutorsView'
 import type { ForecastResponse, TutorMonth, Workstream } from './types'
 
 const workstreams: Workstream[] = ['Dental', 'Pharmacy', 'Housing', 'Science']
@@ -41,7 +42,7 @@ function statusFor(row: TutorMonth) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Utilisation'>('Dashboard')
+  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Utilisation' | 'Tutors'>('Dashboard')
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
   const [selectedMonth, setSelectedMonth] = useState(demoForecast.months[0])
@@ -50,21 +51,18 @@ function App() {
   const [scenarioOpen, setScenarioOpen] = useState(false)
   const [capacityOverride, setCapacityOverride] = useState(50)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('/api/v1/forecast', { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error('Forecast API unavailable')
-        return response.json() as Promise<ForecastResponse>
-      })
-      .then((payload) => {
-        setForecast(payload)
-        setSelectedMonth(payload.months[0])
-        setDataMode('live')
-      })
-      .catch(() => setDataMode('demo'))
-    return () => controller.abort()
+  const refreshForecast = useCallback(async () => {
+    const response = await fetch('/api/v1/forecast')
+    if (!response.ok) throw new Error('Forecast API unavailable')
+    const payload = await response.json() as ForecastResponse
+    setForecast(payload)
+    setSelectedMonth((current) => payload.months.includes(current) ? current : payload.months[0])
+    setDataMode('live')
   }, [])
+
+  useEffect(() => {
+    refreshForecast().catch(() => setDataMode('demo'))
+  }, [refreshForecast])
 
   const monthRows = useMemo(
     () => forecast.tutor_months.filter((row) => row.month === selectedMonth),
@@ -126,7 +124,7 @@ function App() {
               key={item.label}
               className={`nav-item ${activeView === item.label ? 'active' : ''}`}
               onClick={() => {
-                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Utilisation') setActiveView(item.label)
+                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Utilisation' || item.label === 'Tutors') setActiveView(item.label)
               }}
             >
               <LineIcon path={item.path} />
@@ -153,6 +151,8 @@ function App() {
             selectedWorkstream={selectedWorkstream}
             onWorkstreamChange={setSelectedWorkstream}
           />
+        ) : activeView === 'Tutors' ? (
+          <TutorsView onForecastRefresh={refreshForecast} />
         ) : (
           <>
         <header className="topbar">

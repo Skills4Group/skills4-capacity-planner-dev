@@ -13,6 +13,8 @@ param capacityDatabaseName string = 'capacity_tracker'
 param attendanceDatabaseHost string
 param attendanceDatabaseName string = 'attendance'
 param databaseUser string
+param authEnabled bool = false
+param adminObjectIds string = ''
 
 resource capacityApp 'Microsoft.App/containerApps@2026-01-01' = {
   name: appName
@@ -100,6 +102,14 @@ resource capacityApp 'Microsoft.App/containerApps@2026-01-01' = {
             {
               name: 'CAPACITY_FORECAST_MONTHS'
               value: '18'
+            }
+            {
+              name: 'CAPACITY_AUTH_ENABLED'
+              value: string(authEnabled)
+            }
+            {
+              name: 'CAPACITY_ADMIN_OBJECT_IDS'
+              value: adminObjectIds
             }
           ]
           probes: [
