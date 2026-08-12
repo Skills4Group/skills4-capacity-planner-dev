@@ -25,6 +25,9 @@ Attendance occasionally exposes the same tutor once with an internal fallback ID
 and once with a proper external ID. Capacity Tracker consolidates that unambiguous
 alias pattern onto the external ID and carries forward the latest saved Capacity
 setting; people who merely share a name are not merged.
+When the learner feed uses a Bud tutor ID that is absent from the active tutor
+directory, it is reconciled by normalized tutor name only when that name identifies
+exactly one active tutor. Ambiguous names are deliberately left unmatched.
 
 Administrative writes are protected by Azure Container Apps Easy Auth. The dev
 registration is `Skills4 Capacity Tracker Dev` (application ID

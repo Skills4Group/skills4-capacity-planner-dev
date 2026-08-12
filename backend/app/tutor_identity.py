@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
+
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from .adapters.capacity import TutorSettingRecord
 
@@ -39,6 +40,13 @@ def build_tutor_identity_map(
     suppressed_ids: set[str] = set()
 
     for name_key, group in groups.items():
+        # A learner feed may hold Bud's tutor ID while the active Attendance tutor
+        # directory has only its internal fallback ID. A unique active tutor name
+        # provides a deterministic bridge without changing either source record.
+        if len(group) == 1 and name_key:
+            canonical_by_name[name_key] = group[0].tutor_id
+            continue
+
         external = [
             tutor
             for tutor in group

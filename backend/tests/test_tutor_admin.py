@@ -120,7 +120,9 @@ def test_internal_alias_is_merged_into_unique_external_tutor() -> None:
 def test_same_name_external_tutors_are_not_merged_without_internal_alias() -> None:
     records = build_tutor_admin_records(
         as_of_date=date(2026, 8, 11),
-        attendance_learners=[],
+        attendance_learners=[
+            attendance_learner("L1", "BUD-ALEX", "Business Administrator")
+        ],
         attendance_tutors=[
             AttendanceTutorRecord("EXTERNAL-1", "Alex Smith"),
             AttendanceTutorRecord("EXTERNAL-2", "Alex Smith"),
@@ -130,3 +132,41 @@ def test_same_name_external_tutors_are_not_merged_without_internal_alias() -> No
     )
 
     assert {record.tutor_id for record in records} == {"EXTERNAL-1", "EXTERNAL-2"}
+    assert all(record.current_caseload == 0 for record in records)
+
+
+def test_unique_tutor_name_reconciles_bud_learner_id_to_internal_roster_id() -> None:
+    learner_record = attendance_learner(
+        "L1", "B470ABCE-B20C-460F-802B-AFB80103219A", "Pharmacy Services"
+    )
+    learner_record = AttendanceLearnerRecord(
+        learner_id=learner_record.learner_id,
+        tutor_id=learner_record.tutor_id,
+        tutor_name="  Ceri   Maunder ",
+        programme_name=learner_record.programme_name,
+        start_date=learner_record.start_date,
+        expected_end_date=learner_record.expected_end_date,
+        status_desc=learner_record.status_desc,
+        synced_at=learner_record.synced_at,
+    )
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[learner_record],
+        attendance_tutors=[
+            AttendanceTutorRecord("attendance-internal:9", "Ceri Maunder")
+        ],
+        tutor_settings=[
+            TutorSettingRecord(
+                "attendance-internal:9",
+                "Ceri Maunder",
+                Workstream.PHARMACY,
+                55,
+            )
+        ],
+        programme_mappings={},
+    )
+
+    assert len(records) == 1
+    assert records[0].tutor_id == "attendance-internal:9"
+    assert records[0].current_caseload == 1
+    assert records[0].remaining_capacity == 54

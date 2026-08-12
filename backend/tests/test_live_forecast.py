@@ -114,3 +114,38 @@ def test_forecast_merges_internal_tutor_alias_and_preserves_latest_setting() -> 
     assert request.tutors[0].tutor_id == "EXTERNAL-SOPHIE"
     assert request.tutors[0].capacity == 0
     assert request.existing_learners[0].tutor_id == "EXTERNAL-SOPHIE"
+
+
+def test_forecast_reconciles_unique_tutor_name_when_learner_id_differs() -> None:
+    bud_learner = learner("B470ABCE-B20C-460F-802B-AFB80103219A", "Pharmacy Services")
+    bud_learner = AttendanceLearnerRecord(
+        learner_id=bud_learner.learner_id,
+        tutor_id=bud_learner.tutor_id,
+        tutor_name="Ceri Maunder",
+        programme_name=bud_learner.programme_name,
+        start_date=bud_learner.start_date,
+        expected_end_date=bud_learner.expected_end_date,
+        status_desc=bud_learner.status_desc,
+        synced_at=bud_learner.synced_at,
+    )
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=18,
+        attendance_learners=[bud_learner],
+        attendance_tutors=[
+            AttendanceTutorRecord("attendance-internal:9", "Ceri Maunder")
+        ],
+        tutor_settings=[
+            TutorSettingRecord(
+                "attendance-internal:9",
+                "Ceri Maunder",
+                Workstream.PHARMACY,
+                55,
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+
+    assert request.tutors[0].tutor_id == "attendance-internal:9"
+    assert request.existing_learners[0].tutor_id == "attendance-internal:9"
