@@ -82,3 +82,51 @@ def test_maternity_leave_preserves_configured_capacity_and_sets_effective_to_zer
     assert records[0].effective_capacity == 0
     assert records[0].on_maternity_leave is True
     assert records[0].remaining_capacity == -1
+
+
+def test_internal_alias_is_merged_into_unique_external_tutor() -> None:
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[
+            attendance_learner(
+                "L1", "attendance-internal:67", "Pharmacy Services"
+            )
+        ],
+        attendance_tutors=[
+            AttendanceTutorRecord("attendance-internal:67", "Sophie White"),
+            AttendanceTutorRecord("EXTERNAL-SOPHIE", "Sophie White"),
+        ],
+        tutor_settings=[
+            TutorSettingRecord(
+                "attendance-internal:67",
+                "Sophie White",
+                Workstream.PHARMACY,
+                0,
+                date(2026, 8, 11),
+                datetime(2026, 8, 11, 12, 0),
+                "Admin",
+            )
+        ],
+        programme_mappings={},
+    )
+
+    assert len(records) == 1
+    assert records[0].tutor_id == "EXTERNAL-SOPHIE"
+    assert records[0].capacity == 0
+    assert records[0].current_caseload == 1
+    assert records[0].has_saved_setting is True
+
+
+def test_same_name_external_tutors_are_not_merged_without_internal_alias() -> None:
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[],
+        attendance_tutors=[
+            AttendanceTutorRecord("EXTERNAL-1", "Alex Smith"),
+            AttendanceTutorRecord("EXTERNAL-2", "Alex Smith"),
+        ],
+        tutor_settings=[],
+        programme_mappings={},
+    )
+
+    assert {record.tutor_id for record in records} == {"EXTERNAL-1", "EXTERNAL-2"}

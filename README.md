@@ -21,6 +21,11 @@ Capacity may be set from 0 to 250. A maternity-leave flag preserves the configur
 capacity but temporarily sets the tutor's effective forecast capacity to zero until
 an administrator clears the flag.
 
+Attendance occasionally exposes the same tutor once with an internal fallback ID
+and once with a proper external ID. Capacity Tracker consolidates that unambiguous
+alias pattern onto the external ID and carries forward the latest saved Capacity
+setting; people who merely share a name are not merged.
+
 Administrative writes are protected by Azure Container Apps Easy Auth. The dev
 registration is `Skills4 Capacity Tracker Dev` (application ID
 `bbf24e58-dbf1-4bac-a532-44cb96eb925c`). Anonymous users can view the dashboard,

@@ -77,3 +77,40 @@ def test_unconfigured_idle_tutor_is_not_assigned_to_an_invented_workstream() -> 
         pipeline_learners=[],
     )
     assert request.tutors == []
+
+
+def test_forecast_merges_internal_tutor_alias_and_preserves_latest_setting() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=18,
+        attendance_learners=[learner("attendance-internal:67", "Pharmacy Services")],
+        attendance_tutors=[
+            AttendanceTutorRecord("attendance-internal:67", "Sophie White"),
+            AttendanceTutorRecord("EXTERNAL-SOPHIE", "Sophie White"),
+        ],
+        tutor_settings=[
+            TutorSettingRecord(
+                "EXTERNAL-SOPHIE",
+                "Sophie White",
+                Workstream.PHARMACY,
+                50,
+                date(2026, 8, 11),
+                datetime(2026, 8, 11, 11, 0),
+            ),
+            TutorSettingRecord(
+                "attendance-internal:67",
+                "Sophie White",
+                Workstream.PHARMACY,
+                0,
+                date(2026, 8, 11),
+                datetime(2026, 8, 11, 12, 0),
+            ),
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+
+    assert len(request.tutors) == 1
+    assert request.tutors[0].tutor_id == "EXTERNAL-SOPHIE"
+    assert request.tutors[0].capacity == 0
+    assert request.existing_learners[0].tutor_id == "EXTERNAL-SOPHIE"

@@ -6,6 +6,7 @@ from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from .adapters.capacity import TutorSettingRecord
 from .live_forecast import infer_tutor_workstreams
 from .models import CAPACITY_CONSUMING_STATUSES, TutorAdminRecord, Workstream
+from .tutor_identity import consolidate_tutor_inputs
 
 
 def build_tutor_admin_records(
@@ -16,6 +17,11 @@ def build_tutor_admin_records(
     tutor_settings: list[TutorSettingRecord],
     programme_mappings: dict[str, Workstream],
 ) -> list[TutorAdminRecord]:
+    attendance_learners, attendance_tutors, tutor_settings = consolidate_tutor_inputs(
+        learners=attendance_learners,
+        tutors=attendance_tutors,
+        settings=tutor_settings,
+    )
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
     inferred = infer_tutor_workstreams(attendance_learners, programme_mappings)
     caseloads: dict[str, set[str]] = {}

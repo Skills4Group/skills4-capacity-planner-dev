@@ -13,6 +13,7 @@ from .models import (
     Tutor,
     Workstream,
 )
+from .tutor_identity import consolidate_tutor_inputs
 
 
 def map_programme(
@@ -66,6 +67,11 @@ def build_live_request(
     programme_mappings: dict[str, Workstream],
     pipeline_learners: list[PipelineLearner],
 ) -> ForecastRequest:
+    attendance_learners, attendance_tutors, tutor_settings = consolidate_tutor_inputs(
+        learners=attendance_learners,
+        tutors=attendance_tutors,
+        settings=tutor_settings,
+    )
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
     inferred = infer_tutor_workstreams(attendance_learners, programme_mappings)
 
