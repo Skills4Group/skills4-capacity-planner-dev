@@ -90,7 +90,9 @@ def allocate_pipeline(
 
     for learner in sorted(pipeline, key=lambda item: (item.start_date, item.learner_id)):
         candidates = [
-            tutor for tutor in tutors.values() if tutor.workstream == learner.workstream
+            tutor
+            for tutor in tutors.values()
+            if tutor.workstream == learner.workstream and tutor.capacity > 0
         ]
 
         def candidate_score(tutor: Tutor) -> tuple[float, int, str]:
@@ -204,7 +206,11 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     closing_caseload=closing,
                     peak_caseload=peak,
                     remaining_capacity=remaining,
-                    utilisation_percent=round((peak / tutor.capacity) * 100, 1),
+                    utilisation_percent=(
+                        round((peak / tutor.capacity) * 100, 1)
+                        if tutor.capacity
+                        else 0
+                    ),
                 )
             )
 
@@ -278,4 +284,3 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
         workstream_months=workstream_months,
         unallocated_learners=unallocated,
     )
-

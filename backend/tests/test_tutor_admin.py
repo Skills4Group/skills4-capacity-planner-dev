@@ -57,3 +57,28 @@ def test_saved_capacity_overrides_default_and_break_does_not_use_space() -> None
     assert records[0].current_caseload == 0
     assert records[0].remaining_capacity == 36
     assert records[0].workstream_source == "saved"
+
+
+def test_maternity_leave_preserves_configured_capacity_and_sets_effective_to_zero() -> None:
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[
+            attendance_learner("L1", "T1", "Business Administrator")
+        ],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T1",
+                "Tutor One",
+                Workstream.BUSINESS,
+                45,
+                on_maternity_leave=True,
+            )
+        ],
+        programme_mappings={},
+    )
+
+    assert records[0].capacity == 45
+    assert records[0].effective_capacity == 0
+    assert records[0].on_maternity_leave is True
+    assert records[0].remaining_capacity == -1

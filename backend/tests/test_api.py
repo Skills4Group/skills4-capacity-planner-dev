@@ -34,3 +34,16 @@ def test_tutor_write_is_disabled_without_platform_authentication() -> None:
         json={"capacity": 40, "workstream": "Dental"},
     )
     assert response.status_code == 503
+
+
+def test_zero_capacity_and_maternity_flag_pass_request_validation() -> None:
+    response = client.put(
+        "/api/v1/tutors/T1/capacity",
+        headers={"x-ms-client-principal-id": "forged-admin"},
+        json={
+            "capacity": 0,
+            "workstream": "Business",
+            "on_maternity_leave": True,
+        },
+    )
+    assert response.status_code == 503

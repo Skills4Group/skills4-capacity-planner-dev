@@ -42,7 +42,7 @@ class Tutor(BaseModel):
     tutor_id: str
     tutor_name: str
     workstream: Workstream
-    capacity: int = Field(default=50, ge=1, le=250)
+    capacity: int = Field(default=50, ge=0, le=250)
 
 
 class ExistingLearner(BaseModel):
@@ -139,6 +139,8 @@ class TutorAdminRecord(BaseModel):
     workstream: Workstream | None
     workstream_source: str
     capacity: int
+    effective_capacity: int
+    on_maternity_leave: bool
     current_caseload: int
     remaining_capacity: int
     has_saved_setting: bool
@@ -152,13 +154,15 @@ class TutorListResponse(BaseModel):
 
 
 class TutorUpdateRequest(BaseModel):
-    capacity: int = Field(ge=1, le=250)
+    capacity: int = Field(ge=0, le=250)
     workstream: Workstream
+    on_maternity_leave: bool = False
 
 
 class TutorUpdateResponse(BaseModel):
     tutor_id: str
     capacity: int
     workstream: Workstream
+    on_maternity_leave: bool
     updated_by: str
     effective_from: date

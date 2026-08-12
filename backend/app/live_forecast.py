@@ -79,7 +79,7 @@ def build_live_request(
                     tutor_id=tutor_id,
                     tutor_name=setting.tutor_name or directory_record.tutor_name,
                     workstream=setting.workstream,
-                    capacity=setting.capacity,
+                    capacity=0 if setting.on_maternity_leave else setting.capacity,
                 )
             )
         elif tutor_id in inferred:
@@ -102,7 +102,7 @@ def build_live_request(
                     tutor_id=setting.tutor_id,
                     tutor_name=setting.tutor_name,
                     workstream=setting.workstream,
-                    capacity=setting.capacity,
+                    capacity=0 if setting.on_maternity_leave else setting.capacity,
                 )
             )
 

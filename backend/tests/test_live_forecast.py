@@ -43,6 +43,29 @@ def test_capacity_setting_overrides_inferred_stream_and_default_capacity() -> No
     assert request.existing_learners[0].tutor_id == "T1"
 
 
+def test_maternity_leave_preserves_setting_but_removes_forecast_capacity() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=18,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T1",
+                "Tutor One",
+                Workstream.PHARMACY,
+                50,
+                on_maternity_leave=True,
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+
+    assert request.tutors[0].capacity == 0
+    assert request.existing_learners[0].tutor_id == "T1"
+
+
 def test_unconfigured_idle_tutor_is_not_assigned_to_an_invented_workstream() -> None:
     request = build_live_request(
         as_of_date=date(2026, 8, 11),

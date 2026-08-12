@@ -14,9 +14,12 @@ The Attendance Tool is always treated as a read-only source. Capacity Tracker mi
 ## Tutor administration
 
 The Tutors tab reads the active tutor directory from Attendance and stores all
-capacity and workstream changes in the Capacity-owned
+capacity, workstream, and maternity-leave changes in the Capacity-owned
 `capacity.tutor_setting` table. Changes are effective-dated and record the
 signed-in administrator in `updated_by`; no tutor data is written to Attendance.
+Capacity may be set from 0 to 250. A maternity-leave flag preserves the configured
+capacity but temporarily sets the tutor's effective forecast capacity to zero until
+an administrator clears the flag.
 
 Administrative writes are protected by Azure Container Apps Easy Auth. The dev
 registration is `Skills4 Capacity Tracker Dev` (application ID

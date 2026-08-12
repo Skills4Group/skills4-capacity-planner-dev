@@ -41,12 +41,14 @@ CREATE TABLE capacity.tutor_setting (
     attendance_tutor_id text NOT NULL,
     tutor_name text NOT NULL,
     workstream_code text NOT NULL REFERENCES capacity.workstream(workstream_code),
-    max_learners integer NOT NULL DEFAULT 50 CHECK (max_learners BETWEEN 1 AND 250),
+    max_learners integer NOT NULL DEFAULT 50,
+    on_maternity_leave boolean NOT NULL DEFAULT false,
     effective_from date NOT NULL,
     effective_to date,
     active boolean NOT NULL DEFAULT true,
     updated_at timestamptz NOT NULL DEFAULT now(),
     updated_by text NOT NULL,
+    CONSTRAINT tutor_setting_capacity_range CHECK (max_learners BETWEEN 0 AND 250),
     CONSTRAINT tutor_effective_range CHECK (
         effective_to IS NULL OR effective_to >= effective_from
     ),

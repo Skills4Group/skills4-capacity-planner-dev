@@ -59,6 +59,44 @@ def test_pipeline_is_allocated_only_within_its_workstream() -> None:
     assert pharmacy.forecast_starts == 1
 
 
+def test_zero_capacity_tutor_is_unavailable_without_division_error() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 8, 1),
+        months=1,
+        tutors=[
+            Tutor(
+                tutor_id="T1",
+                tutor_name="Unavailable Tutor",
+                workstream=Workstream.BUSINESS,
+                capacity=0,
+            )
+        ],
+        existing_learners=[],
+        pipeline_learners=[
+            PipelineLearner(
+                learner_id="PL1",
+                programme_name="Business Administrator",
+                workstream=Workstream.BUSINESS,
+                start_date=date(2026, 8, 5),
+                expected_end_date=date(2027, 8, 5),
+            )
+        ],
+    )
+
+    result = build_forecast(request)
+
+    assert result.tutor_months[0].capacity == 0
+    assert result.tutor_months[0].utilisation_percent == 0
+    assert result.tutor_months[0].forecast_starts == 0
+    assert [learner.learner_id for learner in result.unallocated_learners] == ["PL1"]
+    business = next(
+        row
+        for row in result.workstream_months
+        if row.workstream == Workstream.BUSINESS
+    )
+    assert business.additional_tutors_required == 1
+
+
 def test_default_forecast_is_rolling_eighteen_months() -> None:
     request = ForecastRequest(
         as_of_date=date(2026, 8, 11),
@@ -70,4 +108,3 @@ def test_default_forecast_is_rolling_eighteen_months() -> None:
     assert len(result.months) == 18
     assert result.months[0] == date(2026, 8, 1)
     assert result.months[-1] == date(2028, 1, 1)
-

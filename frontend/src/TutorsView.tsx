@@ -10,6 +10,7 @@ import {
 interface TutorDraft {
   capacity: string
   workstream: Workstream | ''
+  onMaternityLeave: boolean
 }
 
 interface TutorsViewProps {
@@ -44,7 +45,11 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     setTutors(payload.tutors)
     setDrafts(Object.fromEntries(payload.tutors.map((tutor) => [
       tutor.tutor_id,
-      { capacity: String(tutor.capacity), workstream: tutor.workstream ?? '' },
+      {
+        capacity: String(tutor.capacity),
+        workstream: tutor.workstream ?? '',
+        onMaternityLeave: tutor.on_maternity_leave,
+      },
     ])))
   }, [])
 
@@ -76,8 +81,9 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     active: tutors.length,
     configured: tutors.filter((tutor) => tutor.has_saved_setting).length,
     custom: tutors.filter((tutor) => tutor.capacity !== 50).length,
+    maternity: tutors.filter((tutor) => tutor.on_maternity_leave).length,
     unassigned: tutors.filter((tutor) => tutor.workstream === null).length,
-    places: tutors.reduce((sum, tutor) => sum + tutor.capacity, 0),
+    places: tutors.reduce((sum, tutor) => sum + tutor.effective_capacity, 0),
   }), [tutors])
 
   function changeDraft(tutorId: string, change: Partial<TutorDraft>) {
@@ -91,14 +97,18 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
   async function saveTutor(tutor: TutorAdminRecord) {
     const draft = drafts[tutor.tutor_id]
     const capacity = Number(draft.capacity)
-    if (!session.is_admin || !draft.workstream || !Number.isInteger(capacity) || capacity < 1 || capacity > 250) return
+    if (!session.is_admin || !draft.workstream || !Number.isInteger(capacity) || capacity < 0 || capacity > 250) return
     setSavingId(tutor.tutor_id)
     setError('')
     try {
       const response = await fetch(`/api/v1/tutors/${encodeURIComponent(tutor.tutor_id)}/capacity`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ capacity, workstream: draft.workstream }),
+        body: JSON.stringify({
+          capacity,
+          workstream: draft.workstream,
+          on_maternity_leave: draft.onMaternityLeave,
+        }),
       })
       if (!response.ok) {
         const detail = await response.json().catch(() => null) as { detail?: string } | null
@@ -134,6 +144,7 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
         <article><span>Active tutors</span><strong>{summary.active}</strong><small>from Attendance</small></article>
         <article><span>Configured</span><strong>{summary.configured}</strong><small>saved settings</small></article>
         <article><span>Custom capacity</span><strong>{summary.custom}</strong><small>not using 50</small></article>
+        <article className={summary.maternity ? 'attention' : ''}><span>Maternity leave</span><strong>{summary.maternity}</strong><small>currently unavailable</small></article>
         <article className={summary.unassigned ? 'attention' : ''}><span>Needs workstream</span><strong>{summary.unassigned}</strong><small>must be assigned</small></article>
         <article><span>Total capacity</span><strong>{summary.places}</strong><small>learner places</small></article>
       </section>
@@ -156,24 +167,32 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
 
         <div className="tutor-admin-table-wrap">
           <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Remaining</th><th>Configuration</th><th></th></tr></thead>
+            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Remaining</th><th>Configuration</th><th></th></tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="empty-row">Loading active tutors…</td></tr>
+                <tr><td colSpan={8} className="empty-row">Loading active tutors…</td></tr>
               ) : visibleTutors.length === 0 ? (
-                <tr><td colSpan={7} className="empty-row">No tutors match these filters.</td></tr>
+                <tr><td colSpan={8} className="empty-row">No tutors match these filters.</td></tr>
               ) : visibleTutors.map((tutor) => {
-                const draft = drafts[tutor.tutor_id] ?? { capacity: String(tutor.capacity), workstream: tutor.workstream ?? '' }
+                const draft = drafts[tutor.tutor_id] ?? {
+                  capacity: String(tutor.capacity),
+                  workstream: tutor.workstream ?? '',
+                  onMaternityLeave: tutor.on_maternity_leave,
+                }
                 const draftCapacity = Number(draft.capacity)
-                const validCapacity = Number.isInteger(draftCapacity) && draftCapacity >= 1 && draftCapacity <= 250
-                const dirty = draftCapacity !== tutor.capacity || draft.workstream !== (tutor.workstream ?? '')
-                const remaining = validCapacity ? draftCapacity - tutor.current_caseload : tutor.remaining_capacity
+                const validCapacity = Number.isInteger(draftCapacity) && draftCapacity >= 0 && draftCapacity <= 250
+                const dirty = draftCapacity !== tutor.capacity
+                  || draft.workstream !== (tutor.workstream ?? '')
+                  || draft.onMaternityLeave !== tutor.on_maternity_leave
+                const effectiveCapacity = draft.onMaternityLeave ? 0 : draftCapacity
+                const remaining = validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
                 return (
-                  <tr key={tutor.tutor_id} className={tutor.workstream === null ? 'unassigned-row' : ''}>
+                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null ? 'unassigned-row' : ''} ${draft.onMaternityLeave ? 'maternity-row' : ''}`}>
                     <td><strong>{tutor.tutor_name}</strong><small>{tutor.tutor_id}</small></td>
                     <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
-                    <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="1" max="250" step="1" value={draft.capacity} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
+                    <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
+                    <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
                     <td><strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong></td>
                     <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
                     <td><button className="save-tutor-button" disabled={!session.is_admin || !dirty || !draft.workstream || !validCapacity || savingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button></td>

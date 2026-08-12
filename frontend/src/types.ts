@@ -58,6 +58,8 @@ export interface TutorAdminRecord {
   workstream: Workstream | null
   workstream_source: 'saved' | 'inferred' | 'unassigned'
   capacity: number
+  effective_capacity: number
+  on_maternity_leave: boolean
   current_caseload: number
   remaining_capacity: number
   has_saved_setting: boolean

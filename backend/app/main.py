@@ -147,6 +147,7 @@ def update_tutor_capacity(
                 tutor_name=tutor.tutor_name,
                 workstream=update.workstream,
                 capacity=update.capacity,
+                on_maternity_leave=update.on_maternity_leave,
                 effective_from=as_of_date,
                 updated_by=actor,
             )
@@ -154,6 +155,7 @@ def update_tutor_capacity(
             tutor_id=tutor.tutor_id,
             capacity=update.capacity,
             workstream=update.workstream,
+            on_maternity_leave=update.on_maternity_leave,
             updated_by=actor,
             effective_from=as_of_date,
         )

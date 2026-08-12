@@ -35,6 +35,8 @@ def build_tutor_admin_records(
         setting = settings_by_id.get(tutor.tutor_id)
         workstream = setting.workstream if setting else inferred.get(tutor.tutor_id)
         capacity = setting.capacity if setting else 50
+        on_maternity_leave = setting.on_maternity_leave if setting else False
+        effective_capacity = 0 if on_maternity_leave else capacity
         current_caseload = len(caseloads.get(tutor.tutor_id, set()))
         records.append(
             TutorAdminRecord(
@@ -45,8 +47,10 @@ def build_tutor_admin_records(
                     "saved" if setting else "inferred" if workstream else "unassigned"
                 ),
                 capacity=capacity,
+                effective_capacity=effective_capacity,
+                on_maternity_leave=on_maternity_leave,
                 current_caseload=current_caseload,
-                remaining_capacity=capacity - current_caseload,
+                remaining_capacity=effective_capacity - current_caseload,
                 has_saved_setting=setting is not None,
                 updated_at=setting.updated_at if setting else None,
                 updated_by=setting.updated_by if setting else None,
