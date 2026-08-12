@@ -22,6 +22,8 @@ def test_demo_forecast_contract() -> None:
         "Pharmacy",
         "Housing",
         "Science",
+        "Business",
+        "Operations",
     }
 
 

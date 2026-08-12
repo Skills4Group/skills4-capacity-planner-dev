@@ -9,7 +9,7 @@ CREATE TABLE capacity.workstream (
     display_name text NOT NULL UNIQUE,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT valid_workstream CHECK (
-        display_name IN ('Dental', 'Pharmacy', 'Housing', 'Science')
+        display_name IN ('Dental', 'Pharmacy', 'Housing', 'Science', 'Business', 'Operations')
     )
 );
 
@@ -18,7 +18,9 @@ VALUES
     ('dental', 'Dental'),
     ('pharmacy', 'Pharmacy'),
     ('housing', 'Housing'),
-    ('science', 'Science')
+    ('science', 'Science'),
+    ('business', 'Business'),
+    ('operations', 'Operations')
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE capacity.programme_workstream (
@@ -101,4 +103,3 @@ CREATE TABLE capacity.sync_run (
     records_written integer NOT NULL DEFAULT 0,
     error_summary text
 );
-

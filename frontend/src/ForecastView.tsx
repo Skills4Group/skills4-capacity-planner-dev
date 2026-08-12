@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { ForecastResponse, Workstream } from './types'
-
-const workstreams: Workstream[] = ['Dental', 'Pharmacy', 'Housing', 'Science']
+import { workstreams, type ForecastResponse, type Workstream } from './types'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',

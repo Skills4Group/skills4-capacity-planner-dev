@@ -1,4 +1,13 @@
-export type Workstream = 'Dental' | 'Pharmacy' | 'Housing' | 'Science'
+export const workstreams = [
+  'Dental',
+  'Pharmacy',
+  'Housing',
+  'Science',
+  'Business',
+  'Operations',
+] as const
+
+export type Workstream = (typeof workstreams)[number]
 
 export interface TutorMonth {
   month: string

@@ -24,6 +24,10 @@ DEMO_TUTORS = [
     Tutor(tutor_id="HOU-03", tutor_name="Megan Price", workstream=Workstream.HOUSING),
     Tutor(tutor_id="SCI-01", tutor_name="Sophie Turner", workstream=Workstream.SCIENCE),
     Tutor(tutor_id="SCI-02", tutor_name="Oliver Grant", workstream=Workstream.SCIENCE),
+    Tutor(tutor_id="BUS-01", tutor_name="Hannah Wright", workstream=Workstream.BUSINESS),
+    Tutor(tutor_id="BUS-02", tutor_name="George Patel", workstream=Workstream.BUSINESS, capacity=45),
+    Tutor(tutor_id="OPS-01", tutor_name="Emma Collins", workstream=Workstream.OPERATIONS),
+    Tutor(tutor_id="OPS-02", tutor_name="Ryan Walker", workstream=Workstream.OPERATIONS),
 ]
 
 PROGRAMMES = {
@@ -31,6 +35,8 @@ PROGRAMMES = {
     Workstream.PHARMACY: "Pharmacy Services Assistant",
     Workstream.HOUSING: "Housing and Property Management",
     Workstream.SCIENCE: "Laboratory Technician",
+    Workstream.BUSINESS: "Business Administrator",
+    Workstream.OPERATIONS: "Operations or Departmental Manager",
 }
 
 
@@ -84,4 +90,3 @@ def demo_request(as_of: date = date(2026, 8, 11)) -> ForecastRequest:
 
 def build_demo_forecast():
     return build_forecast(demo_request())
-

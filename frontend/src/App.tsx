@@ -4,9 +4,7 @@ import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
-import type { ForecastResponse, TutorMonth, Workstream } from './types'
-
-const workstreams: Workstream[] = ['Dental', 'Pharmacy', 'Housing', 'Science']
+import { workstreams, type ForecastResponse, type TutorMonth, type Workstream } from './types'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',

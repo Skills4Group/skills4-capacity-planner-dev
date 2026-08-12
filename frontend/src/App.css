@@ -312,7 +312,7 @@ main {
 
 .workstream-strip {
   display: grid;
-  grid-template-columns: 1.2fr repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1.2fr repeat(6, minmax(0, 1fr));
   gap: 9px;
   margin-bottom: 20px;
 }
@@ -342,6 +342,8 @@ main {
 .workstream-strip button[data-stream='Pharmacy']::before { background: #6366f1; }
 .workstream-strip button[data-stream='Housing']::before { background: #a855f7; }
 .workstream-strip button[data-stream='Science']::before { background: #c084fc; }
+.workstream-strip button[data-stream='Business']::before { background: #0f9f8f; }
+.workstream-strip button[data-stream='Operations']::before { background: #d97706; }
 
 .workstream-strip button.active {
   border-color: #8b5cf6;
@@ -492,6 +494,8 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 .stream-pill[data-stream='Pharmacy'] { background: #e9eaff; color: #484bb1; }
 .stream-pill[data-stream='Housing'] { background: #f6eaff; color: #7d36a1; }
 .stream-pill[data-stream='Science'] { background: #f3eaff; color: #7b3db0; }
+.stream-pill[data-stream='Business'] { background: #e2f7f3; color: #087568; }
+.stream-pill[data-stream='Operations'] { background: #fff1dc; color: #9a4e05; }
 .status-pill.success { background: #f1eaff; color: #7437cf; }
 .status-pill.warning { background: #fff0d5; color: #966216; }
 .status-pill.danger { background: #fde7ed; color: #a83d59; }
@@ -1040,7 +1044,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 
 .outlook-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 

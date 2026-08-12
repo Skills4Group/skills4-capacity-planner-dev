@@ -9,6 +9,8 @@ class Workstream(StrEnum):
     PHARMACY = "Pharmacy"
     HOUSING = "Housing"
     SCIENCE = "Science"
+    BUSINESS = "Business"
+    OPERATIONS = "Operations"
 
 
 class LearnerStatus(StrEnum):

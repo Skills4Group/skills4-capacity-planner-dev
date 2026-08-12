@@ -22,7 +22,8 @@ def learner(tutor_id: str, programme: str) -> AttendanceLearnerRecord:
 def test_programme_mapping_uses_config_before_fallback() -> None:
     assert map_programme("Custom Programme", {"custom programme": Workstream.HOUSING}) == Workstream.HOUSING
     assert map_programme("Level 3 Pharmacy Technician", {}) == Workstream.PHARMACY
-    assert map_programme("Business Administrator", {}) is None
+    assert map_programme("Business Administrator", {}) == Workstream.BUSINESS
+    assert map_programme("Operations or Departmental Manager", {}) == Workstream.OPERATIONS
 
 
 def test_capacity_setting_overrides_inferred_stream_and_default_capacity() -> None:

@@ -31,6 +31,10 @@ def map_programme(
         return Workstream.SCIENCE
     if "housing" in normalised:
         return Workstream.HOUSING
+    if "business" in normalised:
+        return Workstream.BUSINESS
+    if "operations" in normalised:
+        return Workstream.OPERATIONS
     return None
 
 

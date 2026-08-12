@@ -1,4 +1,4 @@
-import type { ForecastResponse, Workstream } from './types'
+import { workstreams, type ForecastResponse, type Workstream } from './types'
 
 const tutors: Array<[string, string, Workstream, number, number]> = [
   ['DEN-01', 'Amelia Hart', 'Dental', 50, 41],
@@ -13,6 +13,10 @@ const tutors: Array<[string, string, Workstream, number, number]> = [
   ['HOU-03', 'Megan Price', 'Housing', 50, 34],
   ['SCI-01', 'Sophie Turner', 'Science', 50, 44],
   ['SCI-02', 'Oliver Grant', 'Science', 50, 40],
+  ['BUS-01', 'Hannah Wright', 'Business', 50, 37],
+  ['BUS-02', 'George Patel', 'Business', 45, 34],
+  ['OPS-01', 'Emma Collins', 'Operations', 50, 39],
+  ['OPS-02', 'Ryan Walker', 'Operations', 50, 35],
 ]
 
 function monthAt(index: number) {
@@ -46,7 +50,7 @@ export function createDemoForecast(): ForecastResponse {
   )
 
   const workstreamMonths = months.flatMap((month) =>
-    (['Dental', 'Pharmacy', 'Housing', 'Science'] as Workstream[]).map((workstream) => {
+    workstreams.map((workstream) => {
       const rows = tutorMonths.filter((row) => row.month === month && row.workstream === workstream)
       const totalCapacity = rows.reduce((sum, row) => sum + row.capacity, 0)
       const peak = rows.reduce((sum, row) => sum + row.peak_caseload, 0)
@@ -75,4 +79,3 @@ export function createDemoForecast(): ForecastResponse {
     unallocated_learners: [],
   }
 }
-

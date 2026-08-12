@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { SessionResponse, TutorAdminRecord, TutorListResponse, Workstream } from './types'
-
-const workstreams: Workstream[] = ['Dental', 'Pharmacy', 'Housing', 'Science']
+import {
+  workstreams,
+  type SessionResponse,
+  type TutorAdminRecord,
+  type TutorListResponse,
+  type Workstream,
+} from './types'
 
 interface TutorDraft {
   capacity: string
