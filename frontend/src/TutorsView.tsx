@@ -33,6 +33,10 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     const response = await fetch('/api/v1/tutors')
     if (!response.ok) throw new Error('Tutor data is unavailable')
     const payload = await response.json() as TutorListResponse
+    const tutorIds = payload.tutors.map((tutor) => tutor.tutor_id.trim())
+    if (tutorIds.some((tutorId) => !tutorId) || new Set(tutorIds).size !== tutorIds.length) {
+      throw new Error('Tutor data contains an invalid or duplicate identifier')
+    }
     setTutors(payload.tutors)
     setDrafts(Object.fromEntries(payload.tutors.map((tutor) => [
       tutor.tutor_id,

@@ -39,7 +39,7 @@ class AttendanceLearnerRecord:
 ACTIVE_TUTORS_QUERY = """
 SELECT
     COALESCE(
-        external_system_id::text,
+        NULLIF(btrim(external_system_id::text), ''),
         'attendance-internal:' || id::text
     ) AS tutor_id,
     trim(concat_ws(' ', first_name, last_name)) AS tutor_name
