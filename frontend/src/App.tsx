@@ -4,7 +4,7 @@ import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
-import { workstreams, type ForecastResponse, type TutorMonth, type Workstream } from './types'
+import { reportingWorkstreams, type ForecastResponse, type TutorMonth, type Workstream } from './types'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -184,7 +184,7 @@ function App() {
 
         <section className="workstream-strip" aria-label="Workstream filters">
           <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{selectedStreamRows.reduce((sum, row) => sum + row.remaining_capacity, 0)} places</strong></button>
-          {workstreams.map((workstream) => {
+          {reportingWorkstreams.map((workstream) => {
             const row = selectedStreamRows.find((item) => item.workstream === workstream)
             return <button key={workstream} data-stream={workstream} className={selectedWorkstream === workstream ? 'active' : ''} onClick={() => setSelectedWorkstream(workstream)}><span>{workstream}</span><strong>{row?.remaining_capacity ?? 0} places</strong></button>
           })}

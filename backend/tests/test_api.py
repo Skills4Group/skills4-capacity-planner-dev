@@ -23,8 +23,8 @@ def test_demo_forecast_contract() -> None:
         "Housing",
         "Science",
         "Business",
-        "Operations",
     }
+    assert all(row["workstream"] != "Operations" for row in payload["tutor_months"])
 
 
 def test_tutor_write_is_disabled_without_platform_authentication() -> None:

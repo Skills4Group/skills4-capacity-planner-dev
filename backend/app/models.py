@@ -13,6 +13,11 @@ class Workstream(StrEnum):
     OPERATIONS = "Operations"
 
 
+REPORTING_WORKSTREAMS = tuple(
+    workstream for workstream in Workstream if workstream != Workstream.OPERATIONS
+)
+
+
 class LearnerStatus(StrEnum):
     IN_PROGRESS = "In Progress"
     COMPLETED = "Completed"

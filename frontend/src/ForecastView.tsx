@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { workstreams, type ForecastResponse, type Workstream } from './types'
+import { reportingWorkstreams, type ForecastResponse, type Workstream } from './types'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -32,7 +32,7 @@ export function ForecastView({
   const months = forecast.months.slice(0, horizon)
 
   const selectedStreams = useMemo(
-    () => workstreams.filter((workstream) => selectedWorkstream === 'All' || workstream === selectedWorkstream),
+    () => reportingWorkstreams.filter((workstream) => selectedWorkstream === 'All' || workstream === selectedWorkstream),
     [selectedWorkstream],
   )
 
@@ -142,7 +142,7 @@ export function ForecastView({
               onChange={(event) => onWorkstreamChange(event.target.value as Workstream | 'All')}
             >
               <option value="All">All subjects</option>
-              {workstreams.map((workstream) => (
+              {reportingWorkstreams.map((workstream) => (
                 <option key={workstream} value={workstream}>{workstream}</option>
               ))}
             </select>

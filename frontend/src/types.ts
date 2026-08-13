@@ -9,6 +9,10 @@ export const workstreams = [
 
 export type Workstream = (typeof workstreams)[number]
 
+export const reportingWorkstreams: Workstream[] = workstreams.filter(
+  (workstream) => workstream !== 'Operations',
+)
+
 export interface TutorMonth {
   month: string
   tutor_id: string

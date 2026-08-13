@@ -108,3 +108,58 @@ def test_default_forecast_is_rolling_eighteen_months() -> None:
     assert len(result.months) == 18
     assert result.months[0] == date(2026, 8, 1)
     assert result.months[-1] == date(2028, 1, 1)
+
+
+def test_operations_tutors_and_learners_are_excluded_from_all_forecast_calculations() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 8, 1),
+        months=1,
+        tutors=[
+            Tutor(
+                tutor_id="OPS-1",
+                tutor_name="Operations Tutor",
+                workstream=Workstream.OPERATIONS,
+                capacity=250,
+            ),
+            Tutor(
+                tutor_id="BUS-1",
+                tutor_name="Business Tutor",
+                workstream=Workstream.BUSINESS,
+                capacity=50,
+            ),
+        ],
+        existing_learners=[
+            ExistingLearner(
+                learner_id="OPS-EXISTING",
+                tutor_id="OPS-1",
+                programme_name="Operations Manager",
+                start_date=date(2026, 1, 1),
+                expected_end_date=date(2027, 1, 1),
+                status=LearnerStatus.IN_PROGRESS,
+            )
+        ],
+        pipeline_learners=[
+            PipelineLearner(
+                learner_id="OPS-PIPELINE",
+                programme_name="Operations Manager",
+                workstream=Workstream.OPERATIONS,
+                start_date=date(2026, 8, 5),
+                expected_end_date=date(2027, 8, 5),
+            )
+        ],
+    )
+
+    result = build_forecast(request)
+
+    assert {row.tutor_id for row in result.tutor_months} == {"BUS-1"}
+    assert Workstream.OPERATIONS not in {
+        row.workstream for row in result.workstream_months
+    }
+    assert result.unallocated_learners == []
+    business = next(
+        row
+        for row in result.workstream_months
+        if row.workstream == Workstream.BUSINESS
+    )
+    assert business.total_capacity == 50
+    assert business.peak_projected_caseload == 0

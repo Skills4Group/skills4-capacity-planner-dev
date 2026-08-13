@@ -11,6 +11,7 @@ from .models import (
     ForecastRequest,
     ForecastResponse,
     PipelineLearner,
+    REPORTING_WORKSTREAMS,
     Tutor,
     TutorMonth,
     UnallocatedLearner,
@@ -146,10 +147,20 @@ def peak_count(records: list[AssignedLearner], start: date) -> int:
 
 
 def build_forecast(request: ForecastRequest) -> ForecastResponse:
-    tutors = {tutor.tutor_id: tutor for tutor in request.tutors}
+    tutors = {
+        tutor.tutor_id: tutor
+        for tutor in request.tutors
+        if tutor.workstream in REPORTING_WORKSTREAMS
+    }
     existing = deduplicate_existing(request.existing_learners, tutors)
     pipeline_allocations, unallocated = allocate_pipeline(
-        request.pipeline_learners, tutors, existing
+        [
+            learner
+            for learner in request.pipeline_learners
+            if learner.workstream in REPORTING_WORKSTREAMS
+        ],
+        tutors,
+        existing,
     )
     all_assigned = [*existing, *pipeline_allocations]
     months = [
@@ -214,7 +225,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 )
             )
 
-        for workstream in Workstream:
+        for workstream in REPORTING_WORKSTREAMS:
             stream_tutors = [
                 tutor for tutor in tutors.values() if tutor.workstream == workstream
             ]

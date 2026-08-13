@@ -1,6 +1,10 @@
 # Skills 4 Capacity Tracker
 
-An Azure-hosted internal application for forecasting tutor capacity across Dental, Pharmacy, Housing, Science, Business, and Operations.
+An Azure-hosted internal application for forecasting tutor capacity across Dental, Pharmacy, Housing, Science, and Business.
+
+Operations remains an assignable administrative workstream, but Operations tutors
+and learners are excluded from all dashboard, capacity, utilisation, forecast, and
+staffing calculations.
 
 ## Stack
 
