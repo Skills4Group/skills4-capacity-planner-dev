@@ -6,6 +6,11 @@ Operations remains an assignable administrative workstream, but Operations tutor
 and learners are excluded from all dashboard, capacity, utilisation, forecast, and
 staffing calculations.
 
+The Forecast tab includes a temporary scenario modeller. Users can override the
+projected active learner total for each month and calculated workstream; staffing
+requirements update immediately using current effective capacity and 50 places per
+additional tutor. Scenario values are browser-local state and are never persisted.
+
 ## Stack
 
 - React and TypeScript frontend (`frontend`)

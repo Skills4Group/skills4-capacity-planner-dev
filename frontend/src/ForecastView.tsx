@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react'
-import { reportingWorkstreams, type ForecastResponse, type Workstream } from './types'
+import {
+  reportingWorkstreams,
+  type ForecastResponse,
+  type Workstream,
+  type WorkstreamMonth,
+} from './types'
+
+const NEW_TUTOR_CAPACITY = 50
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -23,12 +30,24 @@ interface HiringEvent {
   hires: number
 }
 
+function scenarioKey(month: string, workstream: Workstream) {
+  return `${month}:${workstream}`
+}
+
+function scenarioLearnerCount(value: string | undefined, baseline: number) {
+  if (value === undefined) return baseline
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : baseline
+}
+
 export function ForecastView({
   forecast,
   selectedWorkstream,
   onWorkstreamChange,
 }: ForecastViewProps) {
   const [horizon, setHorizon] = useState<6 | 12 | 18>(18)
+  const [scenarioEnabled, setScenarioEnabled] = useState(false)
+  const [scenarioValues, setScenarioValues] = useState<Record<string, string>>({})
   const months = forecast.months.slice(0, horizon)
 
   const selectedStreams = useMemo(
@@ -36,12 +55,44 @@ export function ForecastView({
     [selectedWorkstream],
   )
 
+  const modeledWorkstreamMonths = useMemo(
+    () => forecast.workstream_months.map((row): WorkstreamMonth => {
+      if (!scenarioEnabled) return row
+      const projectedLearners = scenarioLearnerCount(
+        scenarioValues[scenarioKey(row.month, row.workstream)],
+        row.peak_projected_caseload,
+      )
+      const remainingCapacity = row.total_capacity - projectedLearners
+      return {
+        ...row,
+        peak_projected_caseload: projectedLearners,
+        remaining_capacity: remainingCapacity,
+        utilisation_percent: row.total_capacity
+          ? Math.round((projectedLearners / row.total_capacity) * 1000) / 10
+          : 0,
+        additional_tutors_required: Math.ceil(
+          Math.max(0, -remainingCapacity) / NEW_TUTOR_CAPACITY,
+        ),
+      }
+    }),
+    [forecast.workstream_months, scenarioEnabled, scenarioValues],
+  )
+
+  const baselineRows = useMemo(
+    () => new Map(
+      forecast.workstream_months.map((row) => [scenarioKey(row.month, row.workstream), row]),
+    ),
+    [forecast.workstream_months],
+  )
+
+  const scenarioChangeCount = Object.keys(scenarioValues).length
+
   const resourcePlan = useMemo(() => {
     const plannedHires = new Map<Workstream, number>()
     const hiringEvents: HiringEvent[] = []
 
     const monthly = months.map((month) => {
-      const rows = forecast.workstream_months.filter(
+      const rows = modeledWorkstreamMonths.filter(
         (row) => row.month === month && selectedStreams.includes(row.workstream),
       )
       let hiresThisMonth = 0
@@ -80,7 +131,7 @@ export function ForecastView({
     })
 
     return { monthly, hiringEvents }
-  }, [forecast.workstream_months, months, selectedStreams])
+  }, [modeledWorkstreamMonths, months, selectedStreams])
 
   const summary = useMemo(() => {
     const currentStaff = resourcePlan.monthly[0]?.currentStaff ?? 0
@@ -106,7 +157,7 @@ export function ForecastView({
 
   const workstreamPlans = useMemo(
     () => selectedStreams.map((workstream) => {
-      const rows = forecast.workstream_months.filter(
+      const rows = modeledWorkstreamMonths.filter(
         (row) => months.includes(row.month) && row.workstream === workstream,
       )
       const events = resourcePlan.hiringEvents.filter((event) => event.workstream === workstream)
@@ -121,7 +172,7 @@ export function ForecastView({
         peakLearners: Math.max(...rows.map((row) => row.peak_projected_caseload), 0),
       }
     }),
-    [forecast.workstream_months, months, resourcePlan.hiringEvents, selectedStreams],
+    [modeledWorkstreamMonths, months, resourcePlan.hiringEvents, selectedStreams],
   )
 
   const chartMax = Math.max(...resourcePlan.monthly.map((row) => row.plannedStaff), summary.currentStaff, 1)
@@ -159,8 +210,91 @@ export function ForecastView({
               <option value={18}>18 months</option>
             </select>
           </label>
+          <button
+            type="button"
+            className={`forecast-scenario-toggle ${scenarioEnabled ? 'active' : ''}`}
+            aria-pressed={scenarioEnabled}
+            onClick={() => setScenarioEnabled((current) => !current)}
+          >
+            <span>{scenarioEnabled ? 'Scenario active' : 'Model scenario'}</span>
+            <small>{scenarioEnabled ? `${scenarioChangeCount} changed` : 'Enter demand'}</small>
+          </button>
         </div>
       </header>
+
+      {scenarioEnabled && (
+        <section className="forecast-scenario-card" aria-labelledby="forecast-scenario-title">
+          <div className="forecast-scenario-heading">
+            <div>
+              <p className="eyebrow">Temporary planning model</p>
+              <h2 id="forecast-scenario-title">Projected active learners by month</h2>
+              <p>
+                Enter the total learners expected to occupy tutor capacity. Values replace the live
+                baseline for this scenario only and are never saved.
+              </p>
+            </div>
+            <div className="forecast-scenario-actions">
+              <span>{scenarioChangeCount} override{scenarioChangeCount === 1 ? '' : 's'}</span>
+              <button type="button" onClick={() => setScenarioValues({})} disabled={!scenarioChangeCount}>
+                Reset to baseline
+              </button>
+            </div>
+          </div>
+          <div className="forecast-scenario-table-wrap">
+            <table className="forecast-scenario-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  {selectedStreams.map((workstream) => <th key={workstream}>{workstream}</th>)}
+                  <th>Total learners</th>
+                </tr>
+              </thead>
+              <tbody>
+                {months.map((month) => {
+                  const total = selectedStreams.reduce((sum, workstream) => {
+                    const baseline = baselineRows.get(scenarioKey(month, workstream))
+                    return sum + scenarioLearnerCount(
+                      scenarioValues[scenarioKey(month, workstream)],
+                      baseline?.peak_projected_caseload ?? 0,
+                    )
+                  }, 0)
+                  return (
+                    <tr key={month}>
+                      <td><strong>{formatMonth(month)}</strong></td>
+                      {selectedStreams.map((workstream) => {
+                        const key = scenarioKey(month, workstream)
+                        const baseline = baselineRows.get(key)?.peak_projected_caseload ?? 0
+                        const overridden = Object.hasOwn(scenarioValues, key)
+                        return (
+                          <td key={workstream}>
+                            <input
+                              className={overridden ? 'overridden' : ''}
+                              aria-label={`${workstream} projected active learners for ${formatMonth(month)}`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={scenarioValues[key] ?? String(baseline)}
+                              onChange={(event) => setScenarioValues((current) => ({
+                                ...current,
+                                [key]: event.target.value,
+                              }))}
+                            />
+                          </td>
+                        )
+                      })}
+                      <td><strong>{total}</strong></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="forecast-scenario-footnote">
+            Additional tutors are calculated at {NEW_TUTOR_CAPACITY} learner places per new tutor,
+            using current effective capacity in each workstream. Operations remains excluded.
+          </p>
+        </section>
+      )}
 
       <section className={`staffing-answer ${summary.currentTeamCoversHorizon ? 'covered' : 'action'}`} aria-label="Staffing recommendation">
         <span className="staffing-answer-icon">{summary.currentTeamCoversHorizon ? '✓' : '!'}</span>
