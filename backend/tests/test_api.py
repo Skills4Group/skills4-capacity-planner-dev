@@ -27,6 +27,21 @@ def test_demo_forecast_contract() -> None:
     assert all(row["workstream"] != "Operations" for row in payload["tutor_months"])
 
 
+def test_demo_predictive_forecast_contract() -> None:
+    response = client.get("/api/v1/predictive-forecast/demo")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["months"]) == 18
+    assert len(payload["workstream_months"]) == 90
+    assert all(
+        row["workstream"] != "Operations" for row in payload["workstream_months"]
+    )
+    assert all(
+        row["predicted_active_p90"] >= row["predicted_active_p50"]
+        for row in payload["workstream_months"]
+    )
+
+
 def test_tutor_write_is_disabled_without_platform_authentication() -> None:
     response = client.put(
         "/api/v1/tutors/T1/capacity",

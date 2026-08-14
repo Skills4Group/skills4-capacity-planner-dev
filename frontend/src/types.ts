@@ -56,6 +56,55 @@ export interface ForecastResponse {
   }>
 }
 
+export type PredictiveConfidence = 'p50' | 'p80' | 'p90'
+
+export interface PredictiveWorkstreamMonth {
+  month: string
+  workstream: Workstream
+  existing_active_learners: number
+  known_pipeline_starts: number
+  predicted_starts_p50: number
+  predicted_starts_p80: number
+  predicted_starts_p90: number
+  predicted_active_p50: number
+  predicted_active_p80: number
+  predicted_active_p90: number
+  effective_capacity: number
+  additional_tutors_p50: number
+  additional_tutors_p80: number
+  additional_tutors_p90: number
+}
+
+export interface PredictiveWorkstreamSummary {
+  workstream: Workstream
+  historical_starts: number
+  historical_months: number
+  median_duration_months: number
+  data_confidence: 'High' | 'Medium' | 'Low'
+  current_active_learners: number
+  effective_capacity: number
+  peak_active_p50: number
+  peak_active_p80: number
+  peak_active_p90: number
+  peak_additional_tutors_p50: number
+  peak_additional_tutors_p80: number
+  peak_additional_tutors_p90: number
+  first_shortage_month_p50: string | null
+  first_shortage_month_p80: string | null
+  first_shortage_month_p90: string | null
+}
+
+export interface PredictiveForecastResponse {
+  generated_at: string
+  months: string[]
+  training_start: string
+  training_end: string
+  method_description: string
+  data_warnings: string[]
+  workstream_months: PredictiveWorkstreamMonth[]
+  workstream_summaries: PredictiveWorkstreamSummary[]
+}
+
 export interface TutorAdminRecord {
   tutor_id: string
   tutor_name: string

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
-from .demo import build_demo_forecast
+from .demo import build_demo_forecast, build_demo_predictive_forecast
 from .forecast import build_forecast
 from .adapters.attendance import fetch_active_tutors, fetch_learner_progress
 from .adapters.capacity import (
@@ -22,11 +22,13 @@ from .live_forecast import build_live_request
 from .models import (
     ForecastRequest,
     ForecastResponse,
+    PredictiveForecastResponse,
     SessionResponse,
     TutorListResponse,
     TutorUpdateRequest,
     TutorUpdateResponse,
 )
+from .predictive_forecast import build_predictive_forecast
 from .tutor_admin import build_tutor_admin_records
 
 settings = get_settings()
@@ -66,6 +68,13 @@ def demo_forecast() -> ForecastResponse:
     return build_demo_forecast()
 
 
+@app.get(
+    "/api/v1/predictive-forecast/demo", response_model=PredictiveForecastResponse
+)
+def demo_predictive_forecast() -> PredictiveForecastResponse:
+    return build_demo_predictive_forecast()
+
+
 @app.get("/api/v1/forecast", response_model=ForecastResponse)
 def live_forecast() -> ForecastResponse:
     if settings.database_mode.lower() != "live":
@@ -92,6 +101,43 @@ def live_forecast() -> ForecastResponse:
         logger.exception("Live forecast generation failed")
         raise HTTPException(
             status_code=503, detail="Live forecast data is temporarily unavailable"
+        ) from None
+
+
+@app.get("/api/v1/predictive-forecast", response_model=PredictiveForecastResponse)
+def live_predictive_forecast() -> PredictiveForecastResponse:
+    if settings.database_mode.lower() != "live":
+        raise HTTPException(status_code=503, detail="Live data mode is not configured")
+    as_of_date = date.today()
+    try:
+        with attendance_connection(settings) as attendance:
+            learners = fetch_learner_progress(attendance)
+            tutors = fetch_active_tutors(attendance)
+        with capacity_connection(settings) as capacity:
+            tutor_settings, mappings, pipeline = fetch_capacity_inputs(
+                capacity, as_of_date
+            )
+        request = build_live_request(
+            as_of_date=as_of_date,
+            months=settings.forecast_months,
+            attendance_learners=learners,
+            attendance_tutors=tutors,
+            tutor_settings=tutor_settings,
+            programme_mappings=mappings,
+            pipeline_learners=pipeline,
+        )
+        return build_predictive_forecast(
+            as_of_date=as_of_date,
+            months=settings.forecast_months,
+            attendance_learners=learners,
+            forecast_request=request,
+            programme_mappings=mappings,
+        )
+    except Exception:
+        logger.exception("Predictive forecast generation failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Predictive forecast data is temporarily unavailable",
         ) from None
 
 

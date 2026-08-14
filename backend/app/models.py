@@ -132,6 +132,53 @@ class ForecastResponse(BaseModel):
     unallocated_learners: list[UnallocatedLearner]
 
 
+class PredictiveWorkstreamMonth(BaseModel):
+    month: date
+    workstream: Workstream
+    existing_active_learners: int
+    known_pipeline_starts: int
+    predicted_starts_p50: int
+    predicted_starts_p80: int
+    predicted_starts_p90: int
+    predicted_active_p50: int
+    predicted_active_p80: int
+    predicted_active_p90: int
+    effective_capacity: int
+    additional_tutors_p50: int
+    additional_tutors_p80: int
+    additional_tutors_p90: int
+
+
+class PredictiveWorkstreamSummary(BaseModel):
+    workstream: Workstream
+    historical_starts: int
+    historical_months: int
+    median_duration_months: int
+    data_confidence: str
+    current_active_learners: int
+    effective_capacity: int
+    peak_active_p50: int
+    peak_active_p80: int
+    peak_active_p90: int
+    peak_additional_tutors_p50: int
+    peak_additional_tutors_p80: int
+    peak_additional_tutors_p90: int
+    first_shortage_month_p50: date | None = None
+    first_shortage_month_p80: date | None = None
+    first_shortage_month_p90: date | None = None
+
+
+class PredictiveForecastResponse(BaseModel):
+    generated_at: date
+    months: list[date]
+    training_start: date
+    training_end: date
+    method_description: str
+    data_warnings: list[str]
+    workstream_months: list[PredictiveWorkstreamMonth]
+    workstream_summaries: list[PredictiveWorkstreamSummary]
+
+
 class SessionResponse(BaseModel):
     authenticated: bool
     is_admin: bool

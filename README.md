@@ -11,6 +11,24 @@ projected active learner total for each month and calculated workstream; staffin
 requirements update immediately using current effective capacity and 50 places per
 additional tutor. Scenario values are browser-local state and are never persisted.
 
+## Predictive forecasting
+
+The Predictive Forecasting tab estimates future starts and active learner demand
+from up to 36 complete months of Attendance start-date history. It blends recent
+demand with seasonal history, limits the effect of short-term trends, uses scheduled
+end dates and typical programme duration for projected offboarding, and presents
+P50, P80, and P90 planning ranges. P80 is the default prudent staffing view.
+
+Known pipeline starts form a minimum forecast where they exceed the statistical
+estimate. Staffing is calculated independently by reporting workstream using current
+effective tutor capacity and 50 learner places per additional tutor. Operations is
+excluded. The screen also displays model-confidence grades and source-data warnings;
+these predictions are planning estimates rather than guaranteed outcomes.
+
+The endpoint is `GET /api/v1/predictive-forecast`. It reads Attendance and current
+Capacity configuration but does not write to either database and requires no schema
+migration.
+
 ## Stack
 
 - React and TypeScript frontend (`frontend`)

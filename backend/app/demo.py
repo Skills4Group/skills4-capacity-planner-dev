@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from .adapters.attendance import AttendanceLearnerRecord
 from .forecast import build_forecast
 from .models import (
     ExistingLearner,
@@ -9,6 +10,7 @@ from .models import (
     Tutor,
     Workstream,
 )
+from .predictive_forecast import build_predictive_forecast
 
 
 DEMO_TUTORS = [
@@ -90,3 +92,28 @@ def demo_request(as_of: date = date(2026, 8, 11)) -> ForecastRequest:
 
 def build_demo_forecast():
     return build_forecast(demo_request())
+
+
+def build_demo_predictive_forecast():
+    request = demo_request()
+    tutor_names = {tutor.tutor_id: tutor.tutor_name for tutor in request.tutors}
+    attendance_records = [
+        AttendanceLearnerRecord(
+            learner_id=learner.learner_id,
+            tutor_id=learner.tutor_id,
+            tutor_name=tutor_names.get(learner.tutor_id),
+            programme_name=learner.programme_name,
+            start_date=learner.start_date,
+            expected_end_date=learner.expected_end_date,
+            status_desc=learner.status.value,
+            synced_at=None,
+        )
+        for learner in request.existing_learners
+    ]
+    return build_predictive_forecast(
+        as_of_date=request.as_of_date,
+        months=request.months,
+        attendance_learners=attendance_records,
+        forecast_request=request,
+        programme_mappings={},
+    )

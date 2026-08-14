@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
+import { PredictiveForecastView } from './PredictiveForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
 import { reportingWorkstreams, type ForecastResponse, type TutorMonth, type Workstream } from './types'
@@ -15,6 +16,7 @@ const monthFormatter = new Intl.DateTimeFormat('en-GB', {
 const navigation = [
   { label: 'Dashboard', path: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' },
   { label: 'Forecast', path: 'M3 18 9 12l4 4 8-10M16 6h5v5' },
+  { label: 'Predictive Forecasting', path: 'M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18' },
   { label: 'Utilisation', path: 'M3 12h4l2-6 4 12 3-9 2 3h3' },
   { label: 'Learners', path: 'm3 9 9-5 9 5-9 5zM7 12v4c3 2 7 2 10 0v-4' },
   { label: 'Tutors', path: 'M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-2a4 4 0 0 0-3-3.87M16 2.13a4 4 0 0 1 0 7.75' },
@@ -40,7 +42,7 @@ function statusFor(row: TutorMonth) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Utilisation' | 'Tutors'>('Dashboard')
+  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Utilisation' | 'Tutors'>('Dashboard')
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
   const [selectedMonth, setSelectedMonth] = useState(demoForecast.months[0])
@@ -122,7 +124,7 @@ function App() {
               key={item.label}
               className={`nav-item ${activeView === item.label ? 'active' : ''}`}
               onClick={() => {
-                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Utilisation' || item.label === 'Tutors') setActiveView(item.label)
+                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Predictive Forecasting' || item.label === 'Utilisation' || item.label === 'Tutors') setActiveView(item.label)
               }}
             >
               <LineIcon path={item.path} />
@@ -140,6 +142,11 @@ function App() {
         {activeView === 'Forecast' ? (
           <ForecastView
             forecast={forecast}
+            selectedWorkstream={selectedWorkstream}
+            onWorkstreamChange={setSelectedWorkstream}
+          />
+        ) : activeView === 'Predictive Forecasting' ? (
+          <PredictiveForecastView
             selectedWorkstream={selectedWorkstream}
             onWorkstreamChange={setSelectedWorkstream}
           />
