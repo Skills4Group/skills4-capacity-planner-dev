@@ -25,6 +25,137 @@ effective tutor capacity and 50 learner places per additional tutor. Operations 
 excluded. The screen also displays model-confidence grades and source-data warnings;
 these predictions are planning estimates rather than guaranteed outcomes.
 
+### Projection mathematics
+
+All calculations are performed independently for each reporting workstream. Let
+`x_t` be the number of learner starts in historical month `t`. The model uses the
+latest 36 **complete** months; the current partial month and future-dated starts are
+not included in model training.
+
+#### 1. Limit historical outliers
+
+The start history is winsorised before its seasonal and recent averages are taken.
+For historical values `x`:
+
+```text
+m   = median(x)
+MAD = median(|x - m|)
+μ   = mean(x)
+
+upper_bound = max(percentile90(x), m + 3 × max(MAD, √(μ + 1)))
+bounded_x_t = min(x_t, upper_bound)
+```
+
+This prevents a single unusually large intake month from controlling every future
+projection while retaining genuine recurring seasonal peaks.
+
+#### 2. Seasonal and recent-demand baseline
+
+For forecast month `h`, `R` is the mean of the latest six bounded monthly start
+counts. `S_h` uses the same calendar month from the previous one, two, and three
+years, weighted toward the most recent year:
+
+```text
+R   = mean(last 6 bounded months)
+S_h = weighted_mean(same month 1, 2 and 3 years ago; weights 0.6, 0.3, 0.1)
+```
+
+Weights are renormalised when fewer than three corresponding months exist. If no
+same-month history exists, `S_h = R`.
+
+#### 3. Capped trend adjustment and P50 starts
+
+`P` is the mean of the six months immediately before the recent six-month window.
+The recent trend ratio is restricted to between `0.75` and `1.25`, so the model can
+apply no more than a 25% downward or upward trend. Only half of that capped trend is
+introduced progressively over the first 12 forecast months:
+
+```text
+trend_ratio    = clamp(R / P, 0.75, 1.25)
+trend_strength = 0.5 × min((h + 1) / 12, 1)
+trend_factor   = 1 + (trend_ratio - 1) × trend_strength
+
+P50_starts_h = round(max(0, (0.7 × S_h + 0.3 × R) × trend_factor))
+```
+
+If `P = 0`, the ratio is `1.25` when recent demand is positive and `1.0` otherwise.
+
+#### 4. P80 and P90 planning ranges
+
+The model measures historical year-on-year error using
+`d_t = x_t - x_(t-12)`. Its robust residual scale is:
+
+```text
+residual_scale = 1.4826 × MAD(d) / √2
+σ = max(1, √(P50_starts_h + 0.5), residual_scale)
+
+P80_starts_h = max(P50_starts_h, ceil(P50_starts_h + 1.282 × σ))
+P90_starts_h = max(P80_starts_h, ceil(P50_starts_h + 1.645 × σ))
+```
+
+When 12-month differences are unavailable, `MAD(x)` is used for the residual scale.
+P50 is the central estimate; P80 and P90 are increasingly cautious planning ranges,
+not guarantees that an exact probability will be achieved.
+
+#### 5. Apply known pipeline starts
+
+Known Bud/CRM pipeline starts form a floor rather than being added to the statistical
+forecast, which avoids counting the same expected demand twice. For confidence level
+`k` (`P50`, `P80`, or `P90`):
+
+```text
+forecast_starts_(h,k) = max(statistical_starts_(h,k), known_pipeline_starts_h)
+```
+
+#### 6. Convert starts into active learner demand
+
+Typical programme duration `D` is the median number of months between learner start
+and expected end dates within the workstream. Individual durations are limited to
+3–60 months; the fallback is 18 months when no usable duration exists.
+
+Existing learners count in month `h` when their dates overlap that month and their
+status consumes capacity. On-break learners do not consume capacity.
+
+```text
+existing_active_h = count(distinct learners where
+                          start_date <= month_end_h and
+                          expected_end_date >= month_start_h)
+
+forecast_cohorts_(h,k) = sum(forecast_starts_(j,k))
+                         for all j <= h where (h - j) < D
+
+predicted_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
+```
+
+#### 7. Capacity gap and additional tutors
+
+Effective capacity is the sum of current tutor capacity settings in that workstream.
+A tutor marked as on maternity leave contributes zero effective capacity. Operations
+tutors and learners contribute nothing. Capacity is held constant over the forecast
+horizon until future-dated staffing settings are implemented.
+
+```text
+effective_capacity = sum(effective tutor capacities in the workstream)
+remaining_capacity_(h,k) = effective_capacity - predicted_active_(h,k)
+
+additional_tutors_(h,k) =
+    ceil(max(0, predicted_active_(h,k) - effective_capacity) / 50)
+```
+
+The peak tutor requirement is the maximum monthly value, and the first shortage month
+is the earliest month where `additional_tutors_(h,k) > 0`.
+
+#### 8. Data-confidence grade
+
+The workstream grade describes the amount of training evidence, not the probability
+band selected by the user:
+
+```text
+High   = at least 24 observed months and at least 200 historical starts
+Medium = at least 12 observed months and at least 50 historical starts
+Low    = anything below the Medium thresholds
+```
+
 The endpoint is `GET /api/v1/predictive-forecast`. It reads Attendance and current
 Capacity configuration but does not write to either database and requires no schema
 migration.
