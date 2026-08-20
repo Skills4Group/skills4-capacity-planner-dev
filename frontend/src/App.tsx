@@ -5,7 +5,7 @@ import { ForecastView } from './ForecastView'
 import { PredictiveForecastView } from './PredictiveForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
-import { reportingWorkstreams, type ForecastResponse, type TutorMonth, type Workstream } from './types'
+import { reportingWorkstreams, type ForecastResponse, type TutorDiscoverySummary, type TutorMonth, type Workstream } from './types'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -50,6 +50,11 @@ function App() {
   const [search, setSearch] = useState('')
   const [scenarioOpen, setScenarioOpen] = useState(false)
   const [capacityOverride, setCapacityOverride] = useState(50)
+  const [tutorDiscovery, setTutorDiscovery] = useState<TutorDiscoverySummary>({
+    checked_at: '',
+    new_tutor_count: 0,
+    new_tutors: [],
+  })
 
   const refreshForecast = useCallback(async () => {
     const response = await fetch('/api/v1/forecast')
@@ -60,9 +65,28 @@ function App() {
     setDataMode('live')
   }, [])
 
+  const refreshTutorDiscovery = useCallback(async () => {
+    const response = await fetch('/api/v1/tutors/discovery/refresh', { method: 'POST' })
+    if (!response.ok) throw new Error('Tutor discovery API unavailable')
+    const payload = await response.json() as TutorDiscoverySummary
+    setTutorDiscovery(payload)
+  }, [])
+
+  const setTutorDiscoveryCount = useCallback((count: number) => {
+    setTutorDiscovery((current) => ({ ...current, new_tutor_count: count }))
+  }, [])
+
   useEffect(() => {
     refreshForecast().catch(() => setDataMode('demo'))
   }, [refreshForecast])
+
+  useEffect(() => {
+    void refreshTutorDiscovery().catch(() => undefined)
+    const timer = window.setInterval(() => {
+      void refreshTutorDiscovery().catch(() => undefined)
+    }, 5 * 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshTutorDiscovery])
 
   const monthRows = useMemo(
     () => forecast.tutor_months.filter((row) => row.month === selectedMonth),
@@ -129,6 +153,11 @@ function App() {
             >
               <LineIcon path={item.path} />
               {item.label}
+              {item.label === 'Tutors' && tutorDiscovery.new_tutor_count > 0 && (
+                <span className="nav-notification-badge" aria-label={`${tutorDiscovery.new_tutor_count} new tutors`}>
+                  {tutorDiscovery.new_tutor_count}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -157,7 +186,10 @@ function App() {
             onWorkstreamChange={setSelectedWorkstream}
           />
         ) : activeView === 'Tutors' ? (
-          <TutorsView onForecastRefresh={refreshForecast} />
+          <TutorsView
+            onForecastRefresh={refreshForecast}
+            onDiscoveryCountChange={setTutorDiscoveryCount}
+          />
         ) : (
           <>
         <header className="topbar">
@@ -174,6 +206,13 @@ function App() {
             </button>
           </div>
         </header>
+
+        {tutorDiscovery.new_tutor_count > 0 && (
+          <section className="new-tutor-dashboard-alert" role="status">
+            <div><span>{tutorDiscovery.new_tutor_count}</span><p><strong>New tutor{tutorDiscovery.new_tutor_count === 1 ? '' : 's'} awaiting review</strong><small>Assign a workstream and confirm capacity before relying on future forecasts.</small></p></div>
+            <button onClick={() => setActiveView('Tutors')}>Review tutors</button>
+          </section>
+        )}
 
         <section className="summary-grid" aria-label="Capacity summary">
           <article className="summary-card featured"><p>Remaining capacity</p><strong>{summary.remaining}</strong><span>{summary.remaining >= 0 ? 'learner places available' : 'learner places short'}</span><i>01</i></article>

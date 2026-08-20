@@ -1,7 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from app.adapters.capacity import TutorSettingRecord
+from app.adapters.capacity import TutorDiscoveryRecord, TutorSettingRecord
 from app.models import Workstream
 from app.tutor_admin import build_tutor_admin_records
 
@@ -170,3 +170,57 @@ def test_unique_tutor_name_reconciles_bud_learner_id_to_internal_roster_id() -> 
     assert records[0].tutor_id == "attendance-internal:9"
     assert records[0].current_caseload == 1
     assert records[0].remaining_capacity == 54
+
+
+def test_unacknowledged_discovery_is_exposed_as_new_tutor() -> None:
+    first_seen = datetime(2026, 8, 20, 9, 30, tzinfo=timezone.utc)
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 20),
+        attendance_learners=[],
+        attendance_tutors=[AttendanceTutorRecord("T-NEW", "New Tutor")],
+        tutor_settings=[],
+        programme_mappings={},
+        tutor_discoveries=[
+            TutorDiscoveryRecord(
+                tutor_id="T-NEW",
+                tutor_name="New Tutor",
+                first_seen_at=first_seen,
+                last_seen_at=first_seen,
+                acknowledged_at=None,
+                acknowledged_by=None,
+                active_in_attendance=True,
+            )
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].is_new is True
+    assert records[0].first_seen_at == first_seen
+    assert records[0].workstream is None
+
+
+def test_acknowledged_discovery_is_not_exposed_as_new_tutor() -> None:
+    first_seen = datetime(2026, 8, 20, 9, 30, tzinfo=timezone.utc)
+    acknowledged = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 20),
+        attendance_learners=[],
+        attendance_tutors=[AttendanceTutorRecord("T-REVIEWED", "Reviewed Tutor")],
+        tutor_settings=[],
+        programme_mappings={},
+        tutor_discoveries=[
+            TutorDiscoveryRecord(
+                tutor_id="T-REVIEWED",
+                tutor_name="Reviewed Tutor",
+                first_seen_at=first_seen,
+                last_seen_at=acknowledged,
+                acknowledged_at=acknowledged,
+                acknowledged_by="Admin User",
+                active_in_attendance=True,
+            )
+        ],
+    )
+
+    assert records[0].is_new is False
+    assert records[0].acknowledged_at == acknowledged
+    assert records[0].acknowledged_by == "Admin User"

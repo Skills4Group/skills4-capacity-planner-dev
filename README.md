@@ -228,6 +228,29 @@ When the learner feed uses a Bud tutor ID that is absent from the active tutor
 directory, it is reconciled by normalized tutor name only when that name identifies
 exactly one active tutor. Ambiguous names are deliberately left unmatched.
 
+### New tutor discovery
+
+Capacity Tracker maintains a Capacity-owned discovery ledger in
+`capacity.tutor_discovery`; Attendance remains a read-only source. The app checks the
+canonical active Attendance tutor roster when the app opens, whenever the Tutors tab
+loads, and every five minutes while the app is open. Each tutor has a first-seen,
+last-seen, active, and acknowledgement audit state. Tutors found after the baseline
+are shown in the Tutors navigation badge, the dashboard alert, and the Tutors tab's
+`New` filter until an administrator acknowledges them.
+
+Migration `backend/migrations/004_add_tutor_discovery.sql` creates the ledger and its
+singleton baseline marker. Its first successful non-empty scan records the existing
+active roster as an acknowledged `system-baseline`, preventing a deployment from
+reporting every existing tutor as new. An empty first scan is rejected rather than
+initializing an unreliable baseline.
+
+Saving a new tutor's workstream/capacity settings acknowledges that tutor in the same
+Capacity database transaction. Administrators can also acknowledge a tutor without
+changing settings. A genuinely unassigned tutor is excluded from forecast
+calculations until a workstream is assigned; a tutor whose workstream can be inferred
+from learners uses the normal default capacity of 50 but remains visibly flagged for
+review. No discovery or acknowledgement action writes to Attendance.
+
 Administrative writes are protected by Azure Container Apps Easy Auth. The dev
 registration is `Skills4 Capacity Tracker Dev` (application ID
 `bbf24e58-dbf1-4bac-a532-44cb96eb925c`). Anonymous users can view the dashboard,

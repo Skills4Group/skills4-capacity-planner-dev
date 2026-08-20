@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from .adapters.capacity import TutorSettingRecord
+from .adapters.capacity import TutorDiscoveryRecord, TutorSettingRecord
 from .live_forecast import infer_tutor_workstreams
 from .models import CAPACITY_CONSUMING_STATUSES, TutorAdminRecord, Workstream
 from .tutor_identity import consolidate_tutor_inputs
@@ -16,6 +16,7 @@ def build_tutor_admin_records(
     attendance_tutors: list[AttendanceTutorRecord],
     tutor_settings: list[TutorSettingRecord],
     programme_mappings: dict[str, Workstream],
+    tutor_discoveries: list[TutorDiscoveryRecord] | None = None,
 ) -> list[TutorAdminRecord]:
     attendance_learners, attendance_tutors, tutor_settings = consolidate_tutor_inputs(
         learners=attendance_learners,
@@ -23,6 +24,9 @@ def build_tutor_admin_records(
         settings=tutor_settings,
     )
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
+    discoveries_by_id = {
+        discovery.tutor_id: discovery for discovery in (tutor_discoveries or [])
+    }
     inferred = infer_tutor_workstreams(attendance_learners, programme_mappings)
     caseloads: dict[str, set[str]] = {}
     consuming_statuses = {status.value for status in CAPACITY_CONSUMING_STATUSES}
@@ -39,6 +43,7 @@ def build_tutor_admin_records(
     records: list[TutorAdminRecord] = []
     for tutor in attendance_tutors:
         setting = settings_by_id.get(tutor.tutor_id)
+        discovery = discoveries_by_id.get(tutor.tutor_id)
         workstream = setting.workstream if setting else inferred.get(tutor.tutor_id)
         capacity = setting.capacity if setting else 50
         on_maternity_leave = setting.on_maternity_leave if setting else False
@@ -58,6 +63,14 @@ def build_tutor_admin_records(
                 current_caseload=current_caseload,
                 remaining_capacity=effective_capacity - current_caseload,
                 has_saved_setting=setting is not None,
+                is_new=discovery.is_new if discovery else False,
+                first_seen_at=discovery.first_seen_at if discovery else None,
+                acknowledged_at=(
+                    discovery.acknowledged_at if discovery else None
+                ),
+                acknowledged_by=(
+                    discovery.acknowledged_by if discovery else None
+                ),
                 updated_at=setting.updated_at if setting else None,
                 updated_by=setting.updated_by if setting else None,
             )

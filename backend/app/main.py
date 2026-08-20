@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,9 +12,11 @@ from .demo import build_demo_forecast, build_demo_predictive_forecast
 from .forecast import build_forecast
 from .adapters.attendance import fetch_active_tutors, fetch_learner_progress
 from .adapters.capacity import (
+    acknowledge_tutor_discovery,
     fetch_capacity_inputs,
     fetch_tutor_configuration,
     save_tutor_setting,
+    sync_tutor_discovery,
 )
 from .auth import require_admin, resolve_user
 from .database import attendance_connection, capacity_connection
@@ -24,12 +26,16 @@ from .models import (
     ForecastResponse,
     PredictiveForecastResponse,
     SessionResponse,
+    TutorAcknowledgementResponse,
+    TutorDiscoveryItem,
+    TutorDiscoverySummary,
     TutorListResponse,
     TutorUpdateRequest,
     TutorUpdateResponse,
 )
 from .predictive_forecast import build_predictive_forecast
 from .tutor_admin import build_tutor_admin_records
+from .tutor_identity import build_tutor_identity_map
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -154,6 +160,9 @@ def list_tutors() -> TutorListResponse:
             tutor_settings, mappings = fetch_tutor_configuration(
                 capacity, as_of_date
             )
+            discoveries = sync_tutor_discovery(
+                capacity, build_tutor_identity_map(tutors).tutors
+            )
         return TutorListResponse(
             as_of_date=as_of_date,
             tutors=build_tutor_admin_records(
@@ -162,12 +171,79 @@ def list_tutors() -> TutorListResponse:
                 attendance_tutors=tutors,
                 tutor_settings=tutor_settings,
                 programme_mappings=mappings,
+                tutor_discoveries=discoveries,
             ),
+            new_tutor_count=sum(discovery.is_new for discovery in discoveries),
         )
     except Exception:
         logger.exception("Tutor directory loading failed")
         raise HTTPException(
             status_code=503, detail="Tutor data is temporarily unavailable"
+        ) from None
+
+
+@app.post(
+    "/api/v1/tutors/discovery/refresh",
+    response_model=TutorDiscoverySummary,
+)
+def refresh_tutor_discovery() -> TutorDiscoverySummary:
+    if settings.database_mode.lower() != "live":
+        raise HTTPException(status_code=503, detail="Live data mode is not configured")
+    try:
+        with attendance_connection(settings) as attendance:
+            tutors = fetch_active_tutors(attendance)
+        canonical_tutors = build_tutor_identity_map(tutors).tutors
+        with capacity_connection(settings) as capacity:
+            discoveries = sync_tutor_discovery(capacity, canonical_tutors)
+        new_tutors = [discovery for discovery in discoveries if discovery.is_new]
+        return TutorDiscoverySummary(
+            checked_at=datetime.now(timezone.utc),
+            new_tutor_count=len(new_tutors),
+            new_tutors=[
+                TutorDiscoveryItem(
+                    tutor_id=discovery.tutor_id,
+                    tutor_name=discovery.tutor_name,
+                    first_seen_at=discovery.first_seen_at,
+                )
+                for discovery in new_tutors
+            ],
+        )
+    except Exception:
+        logger.exception("Tutor discovery refresh failed")
+        raise HTTPException(
+            status_code=503, detail="Tutor discovery is temporarily unavailable"
+        ) from None
+
+
+@app.put(
+    "/api/v1/tutors/{tutor_id}/acknowledge",
+    response_model=TutorAcknowledgementResponse,
+)
+def acknowledge_new_tutor(
+    tutor_id: str, request: Request
+) -> TutorAcknowledgementResponse:
+    user = require_admin(request, settings)
+    actor = user.display_name or user.object_id or "unknown-admin"
+    try:
+        with capacity_connection(settings) as capacity:
+            discovery = acknowledge_tutor_discovery(
+                capacity,
+                tutor_id=tutor_id,
+                acknowledged_by=actor,
+            )
+        if discovery is None or discovery.acknowledged_at is None:
+            raise HTTPException(status_code=404, detail="New active tutor not found")
+        return TutorAcknowledgementResponse(
+            tutor_id=discovery.tutor_id,
+            acknowledged_at=discovery.acknowledged_at,
+            acknowledged_by=discovery.acknowledged_by or actor,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Tutor acknowledgement failed")
+        raise HTTPException(
+            status_code=503, detail="Tutor acknowledgement could not be saved"
         ) from None
 
 

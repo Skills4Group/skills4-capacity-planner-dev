@@ -15,7 +15,14 @@ interface TutorDraft {
 
 interface TutorsViewProps {
   onForecastRefresh: () => Promise<void>
+  onDiscoveryCountChange: (count: number) => void
 }
+
+const discoveredFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
 
 function sourceLabel(source: TutorAdminRecord['workstream_source']) {
   if (source === 'saved') return 'Configured'
@@ -23,16 +30,20 @@ function sourceLabel(source: TutorAdminRecord['workstream_source']) {
   return 'Needs workstream'
 }
 
-export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
+export function TutorsView({
+  onForecastRefresh,
+  onDiscoveryCountChange,
+}: TutorsViewProps) {
   const [tutors, setTutors] = useState<TutorAdminRecord[]>([])
   const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, display_name: null })
   const [drafts, setDrafts] = useState<Record<string, TutorDraft>>({})
   const [search, setSearch] = useState('')
-  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned'>('All')
+  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New'>('All')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
 
   const loadTutors = useCallback(async () => {
     const response = await fetch('/api/v1/tutors')
@@ -43,6 +54,7 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
       throw new Error('Tutor data contains an invalid or duplicate identifier')
     }
     setTutors(payload.tutors)
+    onDiscoveryCountChange(payload.new_tutor_count)
     setDrafts(Object.fromEntries(payload.tutors.map((tutor) => [
       tutor.tutor_id,
       {
@@ -51,7 +63,7 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
         onMaternityLeave: tutor.on_maternity_leave,
       },
     ])))
-  }, [])
+  }, [onDiscoveryCountChange])
 
   useEffect(() => {
     let active = true
@@ -72,7 +84,11 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     return tutors.filter((tutor) => {
       const matchesSearch = !query || tutor.tutor_name.toLowerCase().includes(query) || tutor.tutor_id.toLowerCase().includes(query)
       const matchesWorkstream = workstreamFilter === 'All'
-        || (workstreamFilter === 'Unassigned' ? tutor.workstream === null : tutor.workstream === workstreamFilter)
+        || (workstreamFilter === 'Unassigned'
+          ? tutor.workstream === null
+          : workstreamFilter === 'New'
+            ? tutor.is_new
+            : tutor.workstream === workstreamFilter)
       return matchesSearch && matchesWorkstream
     })
   }, [search, tutors, workstreamFilter])
@@ -83,6 +99,7 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     custom: tutors.filter((tutor) => tutor.capacity !== 50).length,
     maternity: tutors.filter((tutor) => tutor.on_maternity_leave).length,
     unassigned: tutors.filter((tutor) => tutor.workstream === null).length,
+    newTutors: tutors.filter((tutor) => tutor.is_new).length,
     places: tutors.reduce((sum, tutor) => sum + tutor.effective_capacity, 0),
   }), [tutors])
 
@@ -123,6 +140,27 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
     }
   }
 
+  async function acknowledgeTutor(tutor: TutorAdminRecord) {
+    if (!session.is_admin || !tutor.is_new) return
+    setAcknowledgingId(tutor.tutor_id)
+    setError('')
+    try {
+      const response = await fetch(
+        `/api/v1/tutors/${encodeURIComponent(tutor.tutor_id)}/acknowledge`,
+        { method: 'PUT' },
+      )
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { detail?: string } | null
+        throw new Error(detail?.detail ?? 'The tutor could not be acknowledged')
+      }
+      await loadTutors()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The tutor could not be acknowledged')
+    } finally {
+      setAcknowledgingId(null)
+    }
+  }
+
   return (
     <div className="tutors-view">
       <header className="topbar tutors-topbar">
@@ -139,6 +177,14 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
           <a className="admin-signin" href="/.auth/login/aad?post_login_redirect_uri=/">Sign in as admin</a>
         )}
       </header>
+
+      {summary.newTutors > 0 && (
+        <section className="new-tutor-review-banner" role="status">
+          <div className="new-tutor-review-count">{summary.newTutors}</div>
+          <div><h2>New tutor{summary.newTutors === 1 ? '' : 's'} awaiting review</h2><p>Review workstream and capacity. Saving their settings acknowledges them automatically.</p></div>
+          <button onClick={() => setWorkstreamFilter('New')}>Show new tutors</button>
+        </section>
+      )}
 
       <section className="tutor-summary-grid" aria-label="Tutor configuration summary">
         <article><span>Active tutors</span><strong>{summary.active}</strong><small>from Attendance</small></article>
@@ -157,7 +203,7 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
             <p>Changes take effect today, remain in the Capacity audit history, and refresh every forecast. Attendance is never updated.</p>
           </div>
           <div className="tutor-tools">
-            <label><span>Workstream</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
+            <label><span>Workstream</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
           </div>
         </div>
@@ -187,15 +233,15 @@ export function TutorsView({ onForecastRefresh }: TutorsViewProps) {
                 const effectiveCapacity = draft.onMaternityLeave ? 0 : draftCapacity
                 const remaining = validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
                 return (
-                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null ? 'unassigned-row' : ''} ${draft.onMaternityLeave ? 'maternity-row' : ''}`}>
-                    <td><strong>{tutor.tutor_name}</strong><small>{tutor.tutor_id}</small></td>
+                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null ? 'unassigned-row' : ''} ${draft.onMaternityLeave ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''}`}>
+                    <td><strong>{tutor.tutor_name}{tutor.is_new && <span className="new-tutor-pill">New</span>}</strong><small>{tutor.tutor_id}</small>{tutor.first_seen_at && <small>First seen {discoveredFormatter.format(new Date(tutor.first_seen_at))}</small>}</td>
                     <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
                     <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
                     <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
                     <td><strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong></td>
-                    <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
-                    <td><button className="save-tutor-button" disabled={!session.is_admin || !dirty || !draft.workstream || !validCapacity || savingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button></td>
+                    <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.is_new && <small className="review-required">Review required</small>}{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
+                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !dirty || !draft.workstream || !validCapacity || savingId !== null || acknowledgingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
                   </tr>
                 )
               })}

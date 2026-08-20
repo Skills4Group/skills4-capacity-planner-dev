@@ -62,3 +62,16 @@ def test_zero_capacity_and_maternity_flag_pass_request_validation() -> None:
         },
     )
     assert response.status_code == 503
+
+
+def test_tutor_acknowledgement_is_disabled_without_platform_authentication() -> None:
+    response = client.put(
+        "/api/v1/tutors/T1/acknowledge",
+        headers={"x-ms-client-principal-id": "forged-admin"},
+    )
+    assert response.status_code == 503
+
+
+def test_tutor_discovery_refresh_requires_live_database_mode() -> None:
+    response = client.post("/api/v1/tutors/discovery/refresh")
+    assert response.status_code == 503

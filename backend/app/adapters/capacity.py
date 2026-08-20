@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from .attendance import AttendanceTutorRecord
 from ..models import PipelineLearner, Workstream
 
 
@@ -58,6 +59,145 @@ class TutorSettingRecord:
     updated_at: datetime | None = None
     updated_by: str | None = None
     on_maternity_leave: bool = False
+
+
+@dataclass(frozen=True)
+class TutorDiscoveryRecord:
+    tutor_id: str
+    tutor_name: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+    acknowledged_at: datetime | None
+    acknowledged_by: str | None
+    active_in_attendance: bool
+
+    @property
+    def is_new(self) -> bool:
+        return self.active_in_attendance and self.acknowledged_at is None
+
+
+def sync_tutor_discovery(
+    connection: Any,
+    tutors: list[AttendanceTutorRecord],
+) -> list[TutorDiscoveryRecord]:
+    """Mirror the canonical active roster into Capacity-owned discovery state."""
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute("SELECT pg_advisory_xact_lock(73420126)")
+            cursor.execute(
+                """
+                SELECT initialized_at
+                FROM capacity.tutor_discovery_state
+                WHERE state_key = 'active-tutor-baseline'
+                """
+            )
+            baseline_scan = cursor.fetchone() is None
+            if baseline_scan and not tutors:
+                raise RuntimeError(
+                    "Tutor discovery baseline cannot be initialized from an empty roster"
+                )
+            if baseline_scan:
+                cursor.execute(
+                    """
+                    INSERT INTO capacity.tutor_discovery_state (state_key)
+                    VALUES ('active-tutor-baseline')
+                    """
+                )
+
+            cursor.execute(
+                """
+                UPDATE capacity.tutor_discovery
+                SET active_in_attendance = false,
+                    updated_at = now()
+                WHERE active_in_attendance IS TRUE
+                """
+            )
+            for tutor in tutors:
+                cursor.execute(
+                    """
+                    INSERT INTO capacity.tutor_discovery (
+                        attendance_tutor_id,
+                        tutor_name,
+                        first_seen_at,
+                        last_seen_at,
+                        acknowledged_at,
+                        acknowledged_by,
+                        active_in_attendance,
+                        updated_at
+                    )
+                    VALUES (
+                        %(tutor_id)s,
+                        %(tutor_name)s,
+                        now(),
+                        now(),
+                        CASE WHEN %(baseline_scan)s THEN now() ELSE NULL END,
+                        CASE WHEN %(baseline_scan)s THEN 'system-baseline' ELSE NULL END,
+                        true,
+                        now()
+                    )
+                    ON CONFLICT (attendance_tutor_id)
+                    DO UPDATE SET
+                        tutor_name = EXCLUDED.tutor_name,
+                        last_seen_at = now(),
+                        active_in_attendance = true,
+                        updated_at = now()
+                    """,
+                    {
+                        "tutor_id": tutor.tutor_id,
+                        "tutor_name": tutor.tutor_name,
+                        "baseline_scan": baseline_scan,
+                    },
+                )
+
+            cursor.execute(
+                """
+                SELECT
+                    attendance_tutor_id,
+                    tutor_name,
+                    first_seen_at,
+                    last_seen_at,
+                    acknowledged_at,
+                    acknowledged_by,
+                    active_in_attendance
+                FROM capacity.tutor_discovery
+                WHERE active_in_attendance IS TRUE
+                ORDER BY first_seen_at, attendance_tutor_id
+                """
+            )
+            return [TutorDiscoveryRecord(*row) for row in cursor.fetchall()]
+
+
+def acknowledge_tutor_discovery(
+    connection: Any,
+    *,
+    tutor_id: str,
+    acknowledged_by: str,
+) -> TutorDiscoveryRecord | None:
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute(
+                """
+                UPDATE capacity.tutor_discovery
+                SET acknowledged_at = COALESCE(acknowledged_at, now()),
+                    acknowledged_by = COALESCE(acknowledged_by, %(acknowledged_by)s),
+                    updated_at = now()
+                WHERE attendance_tutor_id = %(tutor_id)s
+                  AND active_in_attendance IS TRUE
+                RETURNING
+                    attendance_tutor_id,
+                    tutor_name,
+                    first_seen_at,
+                    last_seen_at,
+                    acknowledged_at,
+                    acknowledged_by,
+                    active_in_attendance
+                """,
+                {"tutor_id": tutor_id, "acknowledged_by": acknowledged_by},
+            )
+            row = cursor.fetchone()
+            return TutorDiscoveryRecord(*row) if row else None
 
 
 def fetch_tutor_configuration(
@@ -124,6 +264,17 @@ def save_tutor_setting(
                     "tutor_id": tutor_id,
                     "effective_from": effective_from,
                 },
+            )
+            cursor.execute(
+                """
+                UPDATE capacity.tutor_discovery
+                SET acknowledged_at = COALESCE(acknowledged_at, now()),
+                    acknowledged_by = COALESCE(acknowledged_by, %(updated_by)s),
+                    updated_at = now()
+                WHERE attendance_tutor_id = %(tutor_id)s
+                  AND active_in_attendance IS TRUE
+                """,
+                {"tutor_id": tutor_id, "updated_by": updated_by},
             )
             cursor.execute(
                 """

@@ -116,6 +116,10 @@ export interface TutorAdminRecord {
   current_caseload: number
   remaining_capacity: number
   has_saved_setting: boolean
+  is_new: boolean
+  first_seen_at: string | null
+  acknowledged_at: string | null
+  acknowledged_by: string | null
   updated_at: string | null
   updated_by: string | null
 }
@@ -123,6 +127,17 @@ export interface TutorAdminRecord {
 export interface TutorListResponse {
   as_of_date: string
   tutors: TutorAdminRecord[]
+  new_tutor_count: number
+}
+
+export interface TutorDiscoverySummary {
+  checked_at: string
+  new_tutor_count: number
+  new_tutors: Array<{
+    tutor_id: string
+    tutor_name: string
+    first_seen_at: string
+  }>
 }
 
 export interface SessionResponse {

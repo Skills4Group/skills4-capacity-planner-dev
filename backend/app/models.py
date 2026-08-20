@@ -196,6 +196,10 @@ class TutorAdminRecord(BaseModel):
     current_caseload: int
     remaining_capacity: int
     has_saved_setting: bool
+    is_new: bool = False
+    first_seen_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    acknowledged_by: str | None = None
     updated_at: datetime | None = None
     updated_by: str | None = None
 
@@ -203,6 +207,25 @@ class TutorAdminRecord(BaseModel):
 class TutorListResponse(BaseModel):
     as_of_date: date
     tutors: list[TutorAdminRecord]
+    new_tutor_count: int = 0
+
+
+class TutorDiscoveryItem(BaseModel):
+    tutor_id: str
+    tutor_name: str
+    first_seen_at: datetime
+
+
+class TutorDiscoverySummary(BaseModel):
+    checked_at: datetime
+    new_tutor_count: int
+    new_tutors: list[TutorDiscoveryItem]
+
+
+class TutorAcknowledgementResponse(BaseModel):
+    tutor_id: str
+    acknowledged_at: datetime
+    acknowledged_by: str
 
 
 class TutorUpdateRequest(BaseModel):
