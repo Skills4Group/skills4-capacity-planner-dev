@@ -116,6 +116,9 @@ export interface TutorAdminRecord {
   current_caseload: number
   remaining_capacity: number
   has_saved_setting: boolean
+  is_active: boolean
+  status_updated_at: string | null
+  status_updated_by: string | null
   is_new: boolean
   first_seen_at: string | null
   acknowledged_at: string | null

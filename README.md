@@ -220,6 +220,16 @@ Capacity may be set from 0 to 250. A maternity-leave flag preserves the configur
 capacity but temporarily sets the tutor's effective forecast capacity to zero until
 an administrator clears the flag.
 
+Administrators can also deactivate or reactivate a tutor from the Tutors tab. Status
+changes are effective-dated in the Capacity-owned `capacity.tutor_status` table and
+record the administrator and update time. An inactive tutor remains visible in the
+directory for review and reactivation, but contributes no tutor headcount, available
+capacity, utilisation denominator, or forecast staffing. Their active learners are
+retained as unallocated demand so the app continues to show the learner places and
+replacement tutors required. Migration
+`backend/migrations/005_add_tutor_status.sql` creates this audit history; it makes no
+change to Attendance.
+
 Attendance occasionally exposes the same tutor once with an internal fallback ID
 and once with a proper external ID. Capacity Tracker consolidates that unambiguous
 alias pattern onto the external ID and carries forward the latest saved Capacity

@@ -1,7 +1,11 @@
 from datetime import date, datetime, timezone
 
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from app.adapters.capacity import TutorDiscoveryRecord, TutorSettingRecord
+from app.adapters.capacity import (
+    TutorDiscoveryRecord,
+    TutorSettingRecord,
+    TutorStatusRecord,
+)
 from app.models import Workstream
 from app.tutor_admin import build_tutor_admin_records
 
@@ -224,3 +228,62 @@ def test_acknowledged_discovery_is_not_exposed_as_new_tutor() -> None:
     assert records[0].is_new is False
     assert records[0].acknowledged_at == acknowledged
     assert records[0].acknowledged_by == "Admin User"
+
+
+def test_inactive_tutor_remains_visible_with_zero_effective_capacity() -> None:
+    updated = datetime(2026, 8, 20, 10, 0, tzinfo=timezone.utc)
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 20),
+        attendance_learners=[
+            attendance_learner("L1", "T-INACTIVE", "Pharmacy Services")
+        ],
+        attendance_tutors=[
+            AttendanceTutorRecord("T-INACTIVE", "Departed Tutor")
+        ],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T-INACTIVE",
+                "Departed Tutor",
+                Workstream.PHARMACY,
+                50,
+            )
+        ],
+        programme_mappings={},
+        tutor_statuses=[
+            TutorStatusRecord(
+                "T-INACTIVE",
+                "Departed Tutor",
+                False,
+                date(2026, 8, 20),
+                updated,
+                "Admin User",
+            )
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].is_active is False
+    assert records[0].capacity == 50
+    assert records[0].effective_capacity == 0
+    assert records[0].current_caseload == 1
+    assert records[0].remaining_capacity == 0
+    assert records[0].status_updated_by == "Admin User"
+
+
+def test_configured_tutor_missing_from_attendance_remains_visible_for_deactivation() -> None:
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 20),
+        attendance_learners=[],
+        attendance_tutors=[],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T-STALE", "Former Tutor", Workstream.DENTAL, 35
+            )
+        ],
+        programme_mappings={},
+    )
+
+    assert len(records) == 1
+    assert records[0].tutor_id == "T-STALE"
+    assert records[0].is_active is True
+    assert records[0].has_saved_setting is True

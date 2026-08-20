@@ -65,6 +65,21 @@ class ExistingLearner(BaseModel):
         return self
 
 
+class UnallocatedExistingLearner(BaseModel):
+    learner_id: str
+    programme_name: str
+    workstream: Workstream
+    start_date: date
+    expected_end_date: date
+    status: LearnerStatus
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "UnallocatedExistingLearner":
+        if self.expected_end_date < self.start_date:
+            raise ValueError("expected_end_date must be on or after start_date")
+        return self
+
+
 class PipelineLearner(BaseModel):
     learner_id: str
     programme_name: str
@@ -85,6 +100,9 @@ class ForecastRequest(BaseModel):
     tutors: list[Tutor]
     existing_learners: list[ExistingLearner]
     pipeline_learners: list[PipelineLearner]
+    unallocated_existing_learners: list[UnallocatedExistingLearner] = Field(
+        default_factory=list
+    )
 
 
 class TutorMonth(BaseModel):
@@ -196,6 +214,9 @@ class TutorAdminRecord(BaseModel):
     current_caseload: int
     remaining_capacity: int
     has_saved_setting: bool
+    is_active: bool = True
+    status_updated_at: datetime | None = None
+    status_updated_by: str | None = None
     is_new: bool = False
     first_seen_at: datetime | None = None
     acknowledged_at: datetime | None = None
@@ -239,5 +260,16 @@ class TutorUpdateResponse(BaseModel):
     capacity: int
     workstream: Workstream
     on_maternity_leave: bool
+    updated_by: str
+    effective_from: date
+
+
+class TutorStatusUpdateRequest(BaseModel):
+    is_active: bool
+
+
+class TutorStatusUpdateResponse(BaseModel):
+    tutor_id: str
+    is_active: bool
     updated_by: str
     effective_from: date

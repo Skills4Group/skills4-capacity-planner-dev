@@ -1,7 +1,8 @@
 from datetime import date, datetime
 
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from app.adapters.capacity import TutorSettingRecord
+from app.adapters.capacity import TutorSettingRecord, TutorStatusRecord
+from app.forecast import build_forecast
 from app.live_forecast import build_live_request, map_programme
 from app.models import Workstream
 
@@ -149,3 +150,71 @@ def test_forecast_reconciles_unique_tutor_name_when_learner_id_differs() -> None
 
     assert request.tutors[0].tutor_id == "attendance-internal:9"
     assert request.existing_learners[0].tutor_id == "attendance-internal:9"
+
+
+def test_inactive_tutor_is_excluded_but_their_learners_remain_demand() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=2,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Departed Tutor")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T1", "Departed Tutor", Workstream.PHARMACY, 50
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+        tutor_statuses=[
+            TutorStatusRecord(
+                "T1",
+                "Departed Tutor",
+                False,
+                date(2026, 8, 11),
+                datetime(2026, 8, 11, 9, 0),
+                "Admin User",
+            )
+        ],
+    )
+
+    assert request.tutors == []
+    assert request.existing_learners == []
+    assert [row.learner_id for row in request.unallocated_existing_learners] == [
+        "L-T1"
+    ]
+
+    forecast = build_forecast(request)
+    pharmacy = next(
+        row
+        for row in forecast.workstream_months
+        if row.month == date(2026, 8, 1)
+        and row.workstream == Workstream.PHARMACY
+    )
+    assert pharmacy.tutors == 0
+    assert pharmacy.total_capacity == 0
+    assert pharmacy.opening_caseload == 1
+    assert pharmacy.peak_projected_caseload == 1
+    assert pharmacy.additional_tutors_required == 1
+    assert [row.learner_id for row in forecast.unallocated_learners] == ["L-T1"]
+
+
+def test_reactivated_tutor_returns_to_forecast_capacity() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=1,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord("T1", "Tutor One", Workstream.PHARMACY, 40)
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+        tutor_statuses=[
+            TutorStatusRecord("T1", "Tutor One", True, date(2026, 8, 11))
+        ],
+    )
+
+    assert len(request.tutors) == 1
+    assert request.tutors[0].capacity == 40
+    assert len(request.existing_learners) == 1
+    assert request.unallocated_existing_learners == []

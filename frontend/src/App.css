@@ -1479,7 +1479,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 
 .tutor-summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   margin-top: 28px;
 }
@@ -1656,7 +1656,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 
 .tutor-admin-table {
   width: 100%;
-  min-width: 1130px;
+  min-width: 1260px;
   border-collapse: collapse;
 }
 
@@ -1701,13 +1701,24 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   box-shadow: inset 3px 0 #8b44ff;
 }
 
+.tutor-admin-table tr.inactive-tutor-row {
+  background: #f7f7f9;
+  color: #7f8591;
+  box-shadow: inset 3px 0 #8d929e;
+}
+
+.tutor-admin-table tr.inactive-tutor-row td:first-child strong {
+  color: #666d79;
+}
+
 .tutor-admin-table td:first-child {
   min-width: 190px;
 }
 
 .tutor-admin-table td:first-child strong,
 .tutor-admin-table td:first-child small,
-.tutor-admin-table td:nth-child(7) small {
+.tutor-admin-table td:nth-child(6) small,
+.tutor-admin-table td:nth-child(8) small {
   display: block;
 }
 
@@ -1734,7 +1745,8 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 }
 
 .tutor-admin-table td:first-child small,
-.tutor-admin-table td:nth-child(7) small {
+.tutor-admin-table td:nth-child(6) small,
+.tutor-admin-table td:nth-child(8) small {
   max-width: 170px;
   margin-top: 4px;
   overflow: hidden;
@@ -1821,6 +1833,30 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   color: #a45c13;
 }
 
+.tutor-status-pill {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.tutor-status-pill.active {
+  background: #e9f5ee;
+  color: #24724d;
+}
+
+.tutor-status-pill.inactive {
+  background: #e8e9ed;
+  color: #5f6672;
+}
+
+.excluded-capacity {
+  color: #777e8a;
+  font-size: 8px;
+  font-weight: 750;
+}
+
 .configuration-pill {
   display: inline-flex;
   padding: 5px 7px;
@@ -1890,6 +1926,37 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   color: #a7acb7;
   cursor: default;
   opacity: .65;
+}
+
+.tutor-status-button {
+  min-width: 82px;
+  height: 26px;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 7px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.tutor-status-button.deactivate {
+  border: 1px solid #e2a9b5;
+  color: #ad334d;
+}
+
+.tutor-status-button.reactivate {
+  border: 1px solid #9bcbb0;
+  color: #28734e;
+}
+
+.tutor-status-button:disabled {
+  color: #a7acb7;
+  cursor: default;
+  opacity: .65;
+}
+
+.inactive-tutor-row .capacity-input {
+  border-color: transparent;
+  background: transparent;
 }
 
 .empty-row {

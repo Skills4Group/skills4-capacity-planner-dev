@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from .adapters.capacity import TutorSettingRecord
+from .adapters.capacity import TutorSettingRecord, TutorStatusRecord
 
 
 INTERNAL_TUTOR_ID_PREFIX = "attendance-internal:"
@@ -127,3 +127,37 @@ def consolidate_tutor_inputs(
         identities.tutors,
         [record for record, _ in selected_settings.values()],
     )
+
+
+def consolidate_tutor_statuses(
+    *,
+    tutors: list[AttendanceTutorRecord],
+    statuses: list[TutorStatusRecord],
+) -> list[TutorStatusRecord]:
+    identities = build_tutor_identity_map(tutors)
+    selected: dict[str, tuple[TutorStatusRecord, tuple[int, float, bool]]] = {}
+    for status in statuses:
+        original_id = status.tutor_id
+        canonical_id = identities.resolve(status.tutor_id, status.tutor_name)
+        if canonical_id is None:
+            continue
+        remapped = replace(
+            status,
+            tutor_id=canonical_id,
+            tutor_name=identities.canonical_name_by_id.get(
+                original_id, status.tutor_name
+            ),
+        )
+        effective = (
+            status.effective_from.toordinal() if status.effective_from else -1
+        )
+        updated = (
+            status.updated_at.timestamp()
+            if status.updated_at
+            else float("-inf")
+        )
+        rank = effective, updated, original_id == canonical_id
+        current = selected.get(canonical_id)
+        if current is None or rank > current[1]:
+            selected[canonical_id] = remapped, rank
+    return [record for record, _ in selected.values()]

@@ -26,6 +26,20 @@ WHERE ts.active IS TRUE
 ORDER BY attendance_tutor_id, effective_from DESC, updated_at DESC
 """
 
+TUTOR_STATUS_QUERY = """
+SELECT DISTINCT ON (attendance_tutor_id)
+    attendance_tutor_id,
+    tutor_name,
+    is_active,
+    effective_from,
+    updated_at,
+    updated_by
+FROM capacity.tutor_status
+WHERE effective_from <= %(as_of_date)s
+  AND (effective_to IS NULL OR effective_to >= %(as_of_date)s)
+ORDER BY attendance_tutor_id, effective_from DESC, updated_at DESC
+"""
+
 PROGRAMME_MAPPINGS_QUERY = """
 SELECT lower(programme_name), w.display_name
 FROM capacity.programme_workstream pw
@@ -59,6 +73,16 @@ class TutorSettingRecord:
     updated_at: datetime | None = None
     updated_by: str | None = None
     on_maternity_leave: bool = False
+
+
+@dataclass(frozen=True)
+class TutorStatusRecord:
+    tutor_id: str
+    tutor_name: str
+    is_active: bool
+    effective_from: date | None = None
+    updated_at: datetime | None = None
+    updated_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -202,7 +226,11 @@ def acknowledge_tutor_discovery(
 
 def fetch_tutor_configuration(
     connection: Any, as_of_date: date
-) -> tuple[list[TutorSettingRecord], dict[str, Workstream]]:
+) -> tuple[
+    list[TutorSettingRecord],
+    dict[str, Workstream],
+    list[TutorStatusRecord],
+]:
     params = {"as_of_date": as_of_date}
     with connection.transaction():
         with connection.cursor() as cursor:
@@ -227,7 +255,9 @@ def fetch_tutor_configuration(
                 programme_name: Workstream(workstream)
                 for programme_name, workstream in cursor.fetchall()
             }
-    return settings, mappings
+            cursor.execute(TUTOR_STATUS_QUERY, params)
+            statuses = [TutorStatusRecord(*row) for row in cursor.fetchall()]
+    return settings, mappings, statuses
 
 
 def save_tutor_setting(
@@ -325,10 +355,94 @@ def save_tutor_setting(
             )
 
 
+def save_tutor_status(
+    connection: Any,
+    *,
+    tutor_id: str,
+    tutor_name: str,
+    is_active: bool,
+    effective_from: date,
+    updated_by: str,
+) -> None:
+    previous_day = effective_from - timedelta(days=1)
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute(
+                """
+                UPDATE capacity.tutor_status
+                SET effective_to = %(previous_day)s,
+                    updated_at = now(),
+                    updated_by = %(updated_by)s
+                WHERE attendance_tutor_id = %(tutor_id)s
+                  AND effective_from < %(effective_from)s
+                  AND (effective_to IS NULL OR effective_to >= %(effective_from)s)
+                """,
+                {
+                    "previous_day": previous_day,
+                    "updated_by": updated_by,
+                    "tutor_id": tutor_id,
+                    "effective_from": effective_from,
+                },
+            )
+            cursor.execute(
+                """
+                UPDATE capacity.tutor_discovery
+                SET acknowledged_at = COALESCE(acknowledged_at, now()),
+                    acknowledged_by = COALESCE(acknowledged_by, %(updated_by)s),
+                    updated_at = now()
+                WHERE attendance_tutor_id = %(tutor_id)s
+                  AND active_in_attendance IS TRUE
+                """,
+                {"tutor_id": tutor_id, "updated_by": updated_by},
+            )
+            cursor.execute(
+                """
+                INSERT INTO capacity.tutor_status (
+                    attendance_tutor_id,
+                    tutor_name,
+                    is_active,
+                    effective_from,
+                    effective_to,
+                    updated_at,
+                    updated_by
+                )
+                VALUES (
+                    %(tutor_id)s,
+                    %(tutor_name)s,
+                    %(is_active)s,
+                    %(effective_from)s,
+                    NULL,
+                    now(),
+                    %(updated_by)s
+                )
+                ON CONFLICT (attendance_tutor_id, effective_from)
+                DO UPDATE SET
+                    tutor_name = EXCLUDED.tutor_name,
+                    is_active = EXCLUDED.is_active,
+                    effective_to = NULL,
+                    updated_at = now(),
+                    updated_by = EXCLUDED.updated_by
+                """,
+                {
+                    "tutor_id": tutor_id,
+                    "tutor_name": tutor_name,
+                    "is_active": is_active,
+                    "effective_from": effective_from,
+                    "updated_by": updated_by,
+                },
+            )
+
+
 def fetch_capacity_inputs(
     connection: Any, as_of_date: date
-) -> tuple[list[TutorSettingRecord], dict[str, Workstream], list[PipelineLearner]]:
-    settings, mappings = fetch_tutor_configuration(connection, as_of_date)
+) -> tuple[
+    list[TutorSettingRecord],
+    dict[str, Workstream],
+    list[TutorStatusRecord],
+    list[PipelineLearner],
+]:
+    settings, mappings, statuses = fetch_tutor_configuration(connection, as_of_date)
     params = {"as_of_date": as_of_date}
     with connection.transaction():
         with connection.cursor() as cursor:
@@ -345,4 +459,4 @@ def fetch_capacity_inputs(
                 )
                 for row in cursor.fetchall()
             ]
-    return settings, mappings, pipeline
+    return settings, mappings, statuses, pipeline

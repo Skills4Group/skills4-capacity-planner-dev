@@ -38,12 +38,13 @@ export function TutorsView({
   const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, display_name: null })
   const [drafts, setDrafts] = useState<Record<string, TutorDraft>>({})
   const [search, setSearch] = useState('')
-  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New'>('All')
+  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive'>('All')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
 
   const loadTutors = useCallback(async () => {
     const response = await fetch('/api/v1/tutors')
@@ -85,20 +86,23 @@ export function TutorsView({
       const matchesSearch = !query || tutor.tutor_name.toLowerCase().includes(query) || tutor.tutor_id.toLowerCase().includes(query)
       const matchesWorkstream = workstreamFilter === 'All'
         || (workstreamFilter === 'Unassigned'
-          ? tutor.workstream === null
+          ? tutor.workstream === null && tutor.is_active
           : workstreamFilter === 'New'
             ? tutor.is_new
-            : tutor.workstream === workstreamFilter)
+            : workstreamFilter === 'Inactive'
+              ? !tutor.is_active
+              : tutor.workstream === workstreamFilter)
       return matchesSearch && matchesWorkstream
     })
   }, [search, tutors, workstreamFilter])
 
   const summary = useMemo(() => ({
-    active: tutors.length,
+    active: tutors.filter((tutor) => tutor.is_active).length,
+    inactive: tutors.filter((tutor) => !tutor.is_active).length,
     configured: tutors.filter((tutor) => tutor.has_saved_setting).length,
-    custom: tutors.filter((tutor) => tutor.capacity !== 50).length,
-    maternity: tutors.filter((tutor) => tutor.on_maternity_leave).length,
-    unassigned: tutors.filter((tutor) => tutor.workstream === null).length,
+    custom: tutors.filter((tutor) => tutor.is_active && tutor.capacity !== 50).length,
+    maternity: tutors.filter((tutor) => tutor.is_active && tutor.on_maternity_leave).length,
+    unassigned: tutors.filter((tutor) => tutor.is_active && tutor.workstream === null).length,
     newTutors: tutors.filter((tutor) => tutor.is_new).length,
     places: tutors.reduce((sum, tutor) => sum + tutor.effective_capacity, 0),
   }), [tutors])
@@ -161,13 +165,40 @@ export function TutorsView({
     }
   }
 
+  async function updateTutorStatus(tutor: TutorAdminRecord) {
+    if (!session.is_admin) return
+    const nextActive = !tutor.is_active
+    if (!nextActive && !window.confirm(`Deactivate ${tutor.tutor_name}? Their capacity will be removed from every forecast, while their learners remain as demand requiring reassignment.`)) return
+    setStatusUpdatingId(tutor.tutor_id)
+    setError('')
+    try {
+      const response = await fetch(
+        `/api/v1/tutors/${encodeURIComponent(tutor.tutor_id)}/status`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: nextActive }),
+        },
+      )
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { detail?: string } | null
+        throw new Error(detail?.detail ?? 'The tutor status could not be saved')
+      }
+      await Promise.all([loadTutors(), onForecastRefresh()])
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The tutor status could not be saved')
+    } finally {
+      setStatusUpdatingId(null)
+    }
+  }
+
   return (
     <div className="tutors-view">
       <header className="topbar tutors-topbar">
         <div>
           <p className="eyebrow">Tutor administration</p>
           <h1>Tutors</h1>
-          <p className="page-intro">Set each tutor's maximum learner caseload and workstream.</p>
+          <p className="page-intro">Manage tutor status, maximum learner caseload and workstream.</p>
         </div>
         {session.is_admin ? (
           <div className="admin-identity"><span>Admin access</span><strong>{session.display_name ?? 'Capacity administrator'}</strong></div>
@@ -187,7 +218,8 @@ export function TutorsView({
       )}
 
       <section className="tutor-summary-grid" aria-label="Tutor configuration summary">
-        <article><span>Active tutors</span><strong>{summary.active}</strong><small>from Attendance</small></article>
+        <article><span>Active tutors</span><strong>{summary.active}</strong><small>included in forecasts</small></article>
+        <article className={summary.inactive ? 'attention' : ''}><span>Inactive tutors</span><strong>{summary.inactive}</strong><small>excluded from calculations</small></article>
         <article><span>Configured</span><strong>{summary.configured}</strong><small>saved settings</small></article>
         <article><span>Custom capacity</span><strong>{summary.custom}</strong><small>not using 50</small></article>
         <article className={summary.maternity ? 'attention' : ''}><span>Maternity leave</span><strong>{summary.maternity}</strong><small>currently unavailable</small></article>
@@ -199,11 +231,11 @@ export function TutorsView({
         <div className="tutor-management-heading">
           <div>
             <p className="eyebrow">Capacity settings</p>
-            <h2>Active tutor directory</h2>
-            <p>Changes take effect today, remain in the Capacity audit history, and refresh every forecast. Attendance is never updated.</p>
+            <h2>Tutor directory</h2>
+            <p>Deactivated tutors contribute no staff or capacity, but their learners remain forecast demand requiring reassignment. Attendance is never updated.</p>
           </div>
           <div className="tutor-tools">
-            <label><span>Workstream</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
+            <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
           </div>
         </div>
@@ -213,12 +245,12 @@ export function TutorsView({
 
         <div className="tutor-admin-table-wrap">
           <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Remaining</th><th>Configuration</th><th></th></tr></thead>
+            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Tutor status</th><th>Remaining</th><th>Configuration</th><th></th></tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="empty-row">Loading active tutors…</td></tr>
+                <tr><td colSpan={9} className="empty-row">Loading tutors…</td></tr>
               ) : visibleTutors.length === 0 ? (
-                <tr><td colSpan={8} className="empty-row">No tutors match these filters.</td></tr>
+                <tr><td colSpan={9} className="empty-row">No tutors match these filters.</td></tr>
               ) : visibleTutors.map((tutor) => {
                 const draft = drafts[tutor.tutor_id] ?? {
                   capacity: String(tutor.capacity),
@@ -230,18 +262,19 @@ export function TutorsView({
                 const dirty = draftCapacity !== tutor.capacity
                   || draft.workstream !== (tutor.workstream ?? '')
                   || draft.onMaternityLeave !== tutor.on_maternity_leave
-                const effectiveCapacity = draft.onMaternityLeave ? 0 : draftCapacity
-                const remaining = validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
+                const effectiveCapacity = draft.onMaternityLeave || !tutor.is_active ? 0 : draftCapacity
+                const remaining = !tutor.is_active ? 0 : validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
                 return (
-                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null ? 'unassigned-row' : ''} ${draft.onMaternityLeave ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''}`}>
+                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
                     <td><strong>{tutor.tutor_name}{tutor.is_new && <span className="new-tutor-pill">New</span>}</strong><small>{tutor.tutor_id}</small>{tutor.first_seen_at && <small>First seen {discoveredFormatter.format(new Date(tutor.first_seen_at))}</small>}</td>
-                    <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
+                    <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
-                    <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
-                    <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
-                    <td><strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong></td>
+                    <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
+                    <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
+                    <td><span className={`tutor-status-pill ${tutor.is_active ? 'active' : 'inactive'}`}>{tutor.is_active ? 'Active' : 'Inactive'}</span>{tutor.status_updated_by && <small>by {tutor.status_updated_by}</small>}</td>
+                    <td>{tutor.is_active ? <strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong> : <span className="excluded-capacity">Excluded</span>}</td>
                     <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.is_new && <small className="review-required">Review required</small>}{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
-                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !dirty || !draft.workstream || !validCapacity || savingId !== null || acknowledgingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
+                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !draft.workstream || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
                   </tr>
                 )
               })}

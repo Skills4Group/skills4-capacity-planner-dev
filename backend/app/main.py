@@ -16,6 +16,7 @@ from .adapters.capacity import (
     fetch_capacity_inputs,
     fetch_tutor_configuration,
     save_tutor_setting,
+    save_tutor_status,
     sync_tutor_discovery,
 )
 from .auth import require_admin, resolve_user
@@ -30,6 +31,8 @@ from .models import (
     TutorDiscoveryItem,
     TutorDiscoverySummary,
     TutorListResponse,
+    TutorStatusUpdateRequest,
+    TutorStatusUpdateResponse,
     TutorUpdateRequest,
     TutorUpdateResponse,
 )
@@ -90,7 +93,7 @@ def live_forecast() -> ForecastResponse:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
         with capacity_connection(settings) as capacity:
-            tutor_settings, mappings, pipeline = fetch_capacity_inputs(
+            tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
                 capacity, date.today()
             )
         request = build_live_request(
@@ -101,6 +104,7 @@ def live_forecast() -> ForecastResponse:
             tutor_settings=tutor_settings,
             programme_mappings=mappings,
             pipeline_learners=pipeline,
+            tutor_statuses=tutor_statuses,
         )
         return build_forecast(request)
     except Exception:
@@ -120,7 +124,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
         with capacity_connection(settings) as capacity:
-            tutor_settings, mappings, pipeline = fetch_capacity_inputs(
+            tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
                 capacity, as_of_date
             )
         request = build_live_request(
@@ -131,6 +135,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             tutor_settings=tutor_settings,
             programme_mappings=mappings,
             pipeline_learners=pipeline,
+            tutor_statuses=tutor_statuses,
         )
         return build_predictive_forecast(
             as_of_date=as_of_date,
@@ -157,7 +162,7 @@ def list_tutors() -> TutorListResponse:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
         with capacity_connection(settings) as capacity:
-            tutor_settings, mappings = fetch_tutor_configuration(
+            tutor_settings, mappings, tutor_statuses = fetch_tutor_configuration(
                 capacity, as_of_date
             )
             discoveries = sync_tutor_discovery(
@@ -172,6 +177,7 @@ def list_tutors() -> TutorListResponse:
                 tutor_settings=tutor_settings,
                 programme_mappings=mappings,
                 tutor_discoveries=discoveries,
+                tutor_statuses=tutor_statuses,
             ),
             new_tutor_count=sum(discovery.is_new for discovery in discoveries),
         )
@@ -287,6 +293,67 @@ def update_tutor_capacity(
         logger.exception("Tutor setting update failed")
         raise HTTPException(
             status_code=503, detail="Tutor setting could not be saved"
+        ) from None
+
+
+@app.put(
+    "/api/v1/tutors/{tutor_id}/status",
+    response_model=TutorStatusUpdateResponse,
+)
+def update_tutor_status(
+    tutor_id: str, update: TutorStatusUpdateRequest, request: Request
+) -> TutorStatusUpdateResponse:
+    user = require_admin(request, settings)
+    as_of_date = date.today()
+    try:
+        with attendance_connection(settings) as attendance:
+            attendance_tutors = fetch_active_tutors(attendance)
+        canonical_tutors = build_tutor_identity_map(attendance_tutors).tutors
+        tutor = next(
+            (item for item in canonical_tutors if item.tutor_id == tutor_id), None
+        )
+        with capacity_connection(settings) as capacity:
+            tutor_settings, _, tutor_statuses = fetch_tutor_configuration(
+                capacity, as_of_date
+            )
+            if tutor is None:
+                saved = next(
+                    (item for item in tutor_settings if item.tutor_id == tutor_id),
+                    None,
+                )
+                status = next(
+                    (item for item in tutor_statuses if item.tutor_id == tutor_id),
+                    None,
+                )
+                if saved is not None:
+                    tutor_name = saved.tutor_name
+                elif status is not None:
+                    tutor_name = status.tutor_name
+                else:
+                    raise HTTPException(status_code=404, detail="Tutor not found")
+            else:
+                tutor_name = tutor.tutor_name
+            actor = user.display_name or user.object_id or "unknown-admin"
+            save_tutor_status(
+                capacity,
+                tutor_id=tutor_id,
+                tutor_name=tutor_name,
+                is_active=update.is_active,
+                effective_from=as_of_date,
+                updated_by=actor,
+            )
+        return TutorStatusUpdateResponse(
+            tutor_id=tutor_id,
+            is_active=update.is_active,
+            updated_by=actor,
+            effective_from=as_of_date,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Tutor status update failed")
+        raise HTTPException(
+            status_code=503, detail="Tutor status could not be saved"
         ) from None
 
 

@@ -162,6 +162,17 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
         tutors,
         existing,
     )
+    unallocated_existing = [
+        UnallocatedLearner(
+            learner_id=learner.learner_id,
+            workstream=learner.workstream,
+            start_date=learner.start_date,
+            expected_end_date=learner.expected_end_date,
+        )
+        for learner in request.unallocated_existing_learners
+        if learner.status in CAPACITY_CONSUMING_STATUSES
+        and learner.workstream in REPORTING_WORKSTREAMS
+    ]
     all_assigned = [*existing, *pipeline_allocations]
     months = [
         add_months(month_start(request.as_of_date), index)
@@ -232,12 +243,23 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
             stream_records = [
                 record for record in all_assigned if record.workstream == workstream
             ]
-            stream_unallocated = [
+            stream_pipeline_unallocated = [
                 record
                 for record in unallocated
                 if record.workstream == workstream
                 and record.start_date <= end
                 and record.expected_end_date >= month
+            ]
+            stream_unallocated_existing = [
+                record
+                for record in unallocated_existing
+                if record.workstream == workstream
+                and record.start_date <= end
+                and record.expected_end_date >= month
+            ]
+            stream_unallocated = [
+                *stream_pipeline_unallocated,
+                *stream_unallocated_existing,
             ]
             total_capacity = sum(tutor.capacity for tutor in stream_tutors)
             assigned_peak = peak_count(stream_records, month)
@@ -267,16 +289,30 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     workstream=workstream,
                     tutors=len(stream_tutors),
                     total_capacity=total_capacity,
-                    opening_caseload=sum(row.opening_caseload for row in stream_rows),
+                    opening_caseload=sum(row.opening_caseload for row in stream_rows)
+                    + len(
+                        {
+                            record.learner_id
+                            for record in stream_unallocated_existing
+                            if record.start_date <= month <= record.expected_end_date
+                        }
+                    ),
                     forecast_starts=sum(row.forecast_starts for row in stream_rows)
                     + len(
                         {
                             record.learner_id
-                            for record in stream_unallocated
+                            for record in stream_pipeline_unallocated
                             if month <= record.start_date <= end
                         }
                     ),
-                    offboarded=sum(row.offboarded for row in stream_rows),
+                    offboarded=sum(row.offboarded for row in stream_rows)
+                    + len(
+                        {
+                            record.learner_id
+                            for record in stream_unallocated_existing
+                            if month <= record.expected_end_date <= end
+                        }
+                    ),
                     peak_projected_caseload=projected_peak,
                     remaining_capacity=remaining,
                     utilisation_percent=(
@@ -293,5 +329,5 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
         months=months,
         tutor_months=tutor_months,
         workstream_months=workstream_months,
-        unallocated_learners=unallocated,
+        unallocated_learners=[*unallocated, *unallocated_existing],
     )

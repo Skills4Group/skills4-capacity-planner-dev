@@ -75,3 +75,12 @@ def test_tutor_acknowledgement_is_disabled_without_platform_authentication() -> 
 def test_tutor_discovery_refresh_requires_live_database_mode() -> None:
     response = client.post("/api/v1/tutors/discovery/refresh")
     assert response.status_code == 503
+
+
+def test_tutor_status_write_is_disabled_without_platform_authentication() -> None:
+    response = client.put(
+        "/api/v1/tutors/T1/status",
+        headers={"x-ms-client-principal-id": "forged-admin"},
+        json={"is_active": False},
+    )
+    assert response.status_code == 503

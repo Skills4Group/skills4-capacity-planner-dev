@@ -213,6 +213,12 @@ def build_predictive_forecast(
         tutor = tutors.get(learner.tutor_id)
         if tutor and learner.status.value in valid_statuses:
             existing_by_stream[tutor.workstream].append(learner)
+    for learner in forecast_request.unallocated_existing_learners:
+        if (
+            learner.workstream in REPORTING_WORKSTREAMS
+            and learner.status.value in valid_statuses
+        ):
+            existing_by_stream[learner.workstream].append(learner)
 
     pipeline_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
     for learner in forecast_request.pipeline_learners:
