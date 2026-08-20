@@ -156,6 +156,47 @@ Medium = at least 12 observed months and at least 50 historical starts
 Low    = anything below the Medium thresholds
 ```
 
+### Manual predictive scenario
+
+The Predictive Forecasting tab can apply browser-local monthly movements for each
+reporting workstream. Users can enter Starters, Breaks in Learning (`BiL`), returns
+from BiL, Withdrawn (`WD`), and Out of Funding (`OOF`). Blank Starters retain the
+selected P50/P80/P90 prediction; entering `0` explicitly overrides it with no starts.
+
+For an entered month:
+
+```text
+net_learner_movement = Starters + BiL_Returns - BiL - WD - OOF
+starter_adjustment = Manual_Starters - Model_Starters
+```
+
+The starter adjustment remains active for the workstream's median programme
+duration. BiL, WD, and OOF reductions carry into subsequent months; a BiL return
+offsets the accumulated BiL reduction. For forecast month `h`:
+
+```text
+scenario_active_h = max(
+    0,
+    model_active_h
+    + sum(active starter adjustments through h)
+    + cumulative_BiL_Returns_h
+    - cumulative_BiL_h
+    - cumulative_WD_h
+    - cumulative_OOF_h
+)
+
+remaining_capacity_h = effective_capacity - scenario_active_h
+
+additional_tutors_h =
+    ceil(max(0, scenario_active_h - effective_capacity) / 50)
+```
+
+The UI highlights months where exits exceed the available forecast population and
+caps the resulting active count at zero. A BiL return greater than breaks entered in
+the scenario is allowed with a warning because the break may have started before the
+forecast window. Scenario values are held only in the current React session and are
+never written to Attendance or the Capacity database.
+
 The endpoint is `GET /api/v1/predictive-forecast`. It reads Attendance and current
 Capacity configuration but does not write to either database and requires no schema
 migration.
