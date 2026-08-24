@@ -6,6 +6,14 @@ Operations remains an assignable administrative workstream, but Operations tutor
 and learners are excluded from all dashboard, capacity, utilisation, forecast, and
 staffing calculations.
 
+Dashboard workstream cards show monthly utilisation as
+`projected workstream learners / effective workstream capacity * 100`, rounded to one
+decimal place. The All workstreams figure is calculated from total demand divided by
+total capacity, so it is capacity weighted rather than an average of percentages.
+When a dashboard capacity scenario is open, the cards recalculate using tutor count
+multiplied by the scenario capacity. Demand with zero capacity is labelled
+`No capacity` rather than `0% utilised`.
+
 The Forecast tab includes a temporary scenario modeller. Users can override the
 projected active learner total for each month and calculated workstream; staffing
 requirements update immediately using current effective capacity and 50 places per

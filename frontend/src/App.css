@@ -432,8 +432,25 @@ main {
 }
 
 .workstream-strip strong {
+  display: block;
   color: #242938;
   font-size: 12px;
+}
+
+.workstream-strip .workstream-utilisation {
+  display: block;
+  margin-top: 5px;
+  color: #39775a;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.workstream-strip .workstream-utilisation.high {
+  color: #9a5d12;
+}
+
+.workstream-strip .workstream-utilisation.over {
+  color: #b63853;
 }
 
 .forecast-card,

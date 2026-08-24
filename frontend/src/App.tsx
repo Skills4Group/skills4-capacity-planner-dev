@@ -6,6 +6,7 @@ import { PredictiveForecastView } from './PredictiveForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
 import { reportingWorkstreams, type ForecastResponse, type TutorDiscoverySummary, type TutorMonth, type Workstream } from './types'
+import { calculateWorkstreamUtilisation } from './workstreamUtilisation'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -123,6 +124,8 @@ function App() {
     }
   }, [capacityOverride, scenarioRows])
   const selectedStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
+  const scenarioTutorCapacity = scenarioOpen ? capacityOverride : undefined
+  const allWorkstreamUtilisation = calculateWorkstreamUtilisation(selectedStreamRows, scenarioTutorCapacity)
   const trendRows = forecast.months.map((month) => {
     const rows = forecast.workstream_months.filter(
       (row) => row.month === month && (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
@@ -229,10 +232,11 @@ function App() {
         )}
 
         <section className="workstream-strip" aria-label="Workstream filters">
-          <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{selectedStreamRows.reduce((sum, row) => sum + row.remaining_capacity, 0)} places</strong></button>
+          <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{allWorkstreamUtilisation.remaining} places</strong><small className={`workstream-utilisation ${allWorkstreamUtilisation.tone}`}>{allWorkstreamUtilisation.label}</small></button>
           {reportingWorkstreams.map((workstream) => {
             const row = selectedStreamRows.find((item) => item.workstream === workstream)
-            return <button key={workstream} data-stream={workstream} className={selectedWorkstream === workstream ? 'active' : ''} onClick={() => setSelectedWorkstream(workstream)}><span>{workstream}</span><strong>{row?.remaining_capacity ?? 0} places</strong></button>
+            const utilisation = calculateWorkstreamUtilisation(row ? [row] : [], scenarioTutorCapacity)
+            return <button key={workstream} data-stream={workstream} className={selectedWorkstream === workstream ? 'active' : ''} onClick={() => setSelectedWorkstream(workstream)}><span>{workstream}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label}</small></button>
           })}
         </section>
 
