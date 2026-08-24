@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { selectRollingMonths } from './rollingMonths'
 import { reportingWorkstreams, type ForecastResponse, type Workstream } from './types'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -29,7 +30,7 @@ export function UtilisationView({
   onWorkstreamChange,
 }: UtilisationViewProps) {
   const [horizon, setHorizon] = useState<6 | 12 | 18>(6)
-  const months = forecast.months.slice(0, horizon)
+  const months = selectRollingMonths(forecast.months, horizon)
 
   const tutors = useMemo(() => {
     const firstMonth = months[0]

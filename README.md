@@ -14,6 +14,11 @@ When a dashboard capacity scenario is open, the cards recalculate using tutor co
 multiplied by the scenario capacity. Demand with zero capacity is labelled
 `No capacity` rather than `0% utilised`.
 
+The Utilisation tab's 6-, 12-, and 18-month horizons remove months earlier than the
+user's current calendar month before applying the selected horizon. For example, a
+six-month view opened in September runs from September through February rather than
+retaining August as its first column.
+
 The Forecast tab includes a temporary scenario modeller. Users can override the
 projected active learner total for each month and calculated workstream; staffing
 requirements update immediately using current effective capacity and 50 places per
