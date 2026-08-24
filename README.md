@@ -220,6 +220,13 @@ Capacity may be set from 0 to 250. A maternity-leave flag preserves the configur
 capacity but temporarily sets the tutor's effective forecast capacity to zero until
 an administrator clears the flag.
 
+The tutor directory calculates each tutor's current utilisation as
+`current learners / maximum capacity * 100`, rounded to one decimal place. It uses
+draft capacity and maternity-leave values so the display updates before saving. A
+tutor with zero capacity or on maternity leave is shown as `Unavailable`; an inactive
+tutor is shown as `Excluded`. Utilisation may exceed 100% when caseload is above the
+configured maximum.
+
 Administrators can also deactivate or reactivate a tutor from the Tutors tab. Status
 changes are effective-dated in the Capacity-owned `capacity.tutor_status` table and
 record the administrator and update time. An inactive tutor remains visible in the

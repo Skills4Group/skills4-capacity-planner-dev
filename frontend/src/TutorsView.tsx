@@ -6,6 +6,7 @@ import {
   type TutorListResponse,
   type Workstream,
 } from './types'
+import { calculateTutorUtilisation } from './tutorUtilisation'
 
 interface TutorDraft {
   capacity: string
@@ -245,12 +246,12 @@ export function TutorsView({
 
         <div className="tutor-admin-table-wrap">
           <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Tutor status</th><th>Remaining</th><th>Configuration</th><th></th></tr></thead>
+            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="empty-row">Loading tutors…</td></tr>
+                <tr><td colSpan={10} className="empty-row">Loading tutors…</td></tr>
               ) : visibleTutors.length === 0 ? (
-                <tr><td colSpan={9} className="empty-row">No tutors match these filters.</td></tr>
+                <tr><td colSpan={10} className="empty-row">No tutors match these filters.</td></tr>
               ) : visibleTutors.map((tutor) => {
                 const draft = drafts[tutor.tutor_id] ?? {
                   capacity: String(tutor.capacity),
@@ -264,6 +265,12 @@ export function TutorsView({
                   || draft.onMaternityLeave !== tutor.on_maternity_leave
                 const effectiveCapacity = draft.onMaternityLeave || !tutor.is_active ? 0 : draftCapacity
                 const remaining = !tutor.is_active ? 0 : validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
+                const utilisation = calculateTutorUtilisation({
+                  currentLearners: tutor.current_caseload,
+                  capacity: draftCapacity,
+                  isActive: tutor.is_active,
+                  onMaternityLeave: draft.onMaternityLeave,
+                })
                 return (
                   <tr key={tutor.tutor_id} className={`${tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
                     <td><strong>{tutor.tutor_name}{tutor.is_new && <span className="new-tutor-pill">New</span>}</strong><small>{tutor.tutor_id}</small>{tutor.first_seen_at && <small>First seen {discoveredFormatter.format(new Date(tutor.first_seen_at))}</small>}</td>
@@ -273,6 +280,7 @@ export function TutorsView({
                     <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
                     <td><span className={`tutor-status-pill ${tutor.is_active ? 'active' : 'inactive'}`}>{tutor.is_active ? 'Active' : 'Inactive'}</span>{tutor.status_updated_by && <small>by {tutor.status_updated_by}</small>}</td>
                     <td>{tutor.is_active ? <strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong> : <span className="excluded-capacity">Excluded</span>}</td>
+                    <td><span className={`tutor-utilisation-pill ${utilisation.tone}`} title={utilisation.percent === null ? utilisation.label : `${tutor.current_caseload} of ${draftCapacity} learner places`}>{utilisation.label}</span></td>
                     <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.is_new && <small className="review-required">Review required</small>}{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
                     <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !draft.workstream || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
                   </tr>

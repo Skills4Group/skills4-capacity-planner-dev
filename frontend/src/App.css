@@ -1656,7 +1656,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 
 .tutor-admin-table {
   width: 100%;
-  min-width: 1260px;
+  min-width: 1360px;
   border-collapse: collapse;
 }
 
@@ -1718,7 +1718,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 .tutor-admin-table td:first-child strong,
 .tutor-admin-table td:first-child small,
 .tutor-admin-table td:nth-child(6) small,
-.tutor-admin-table td:nth-child(8) small {
+.tutor-admin-table td:nth-child(9) small {
   display: block;
 }
 
@@ -1746,7 +1746,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 
 .tutor-admin-table td:first-child small,
 .tutor-admin-table td:nth-child(6) small,
-.tutor-admin-table td:nth-child(8) small {
+.tutor-admin-table td:nth-child(9) small {
   max-width: 170px;
   margin-top: 4px;
   overflow: hidden;
@@ -1855,6 +1855,34 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   color: #777e8a;
   font-size: 8px;
   font-weight: 750;
+}
+
+.tutor-utilisation-pill {
+  display: inline-flex;
+  min-width: 52px;
+  justify-content: center;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #e9f5ee;
+  color: #24724d;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.tutor-utilisation-pill.high {
+  background: #fff1d9;
+  color: #9a5d12;
+}
+
+.tutor-utilisation-pill.over {
+  background: #fde9ed;
+  color: #b63853;
+}
+
+.tutor-utilisation-pill.unavailable,
+.tutor-utilisation-pill.excluded {
+  background: #e8e9ed;
+  color: #666d79;
 }
 
 .configuration-pill {
