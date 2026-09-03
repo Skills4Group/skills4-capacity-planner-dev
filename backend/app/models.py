@@ -97,6 +97,7 @@ class PipelineLearner(BaseModel):
 class ForecastRequest(BaseModel):
     as_of_date: date
     months: int = Field(default=18, ge=1, le=36)
+    history_months: int = Field(default=0, ge=0, le=12)
     tutors: list[Tutor]
     existing_learners: list[ExistingLearner]
     pipeline_learners: list[PipelineLearner]

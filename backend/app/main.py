@@ -99,6 +99,7 @@ def live_forecast() -> ForecastResponse:
         request = build_live_request(
             as_of_date=date.today(),
             months=settings.forecast_months,
+            history_months=settings.forecast_history_months,
             attendance_learners=learners,
             attendance_tutors=tutors,
             tutor_settings=tutor_settings,

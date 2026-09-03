@@ -176,7 +176,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
     all_assigned = [*existing, *pipeline_allocations]
     months = [
         add_months(month_start(request.as_of_date), index)
-        for index in range(request.months)
+        for index in range(-request.history_months, request.months)
     ]
     tutor_months: list[TutorMonth] = []
     workstream_months: list[WorkstreamMonth] = []

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { selectRollingMonths } from './rollingMonths'
 import {
   reportingWorkstreams,
   type ForecastResponse,
@@ -48,7 +49,7 @@ export function ForecastView({
   const [horizon, setHorizon] = useState<6 | 12 | 18>(18)
   const [scenarioEnabled, setScenarioEnabled] = useState(false)
   const [scenarioValues, setScenarioValues] = useState<Record<string, string>>({})
-  const months = forecast.months.slice(0, horizon)
+  const months = selectRollingMonths(forecast.months, horizon)
 
   const selectedStreams = useMemo(
     () => reportingWorkstreams.filter((workstream) => selectedWorkstream === 'All' || workstream === selectedWorkstream),

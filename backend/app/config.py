@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     attendance_database_name: str = "attendance"
     attendance_database_user: str | None = None
     forecast_months: int = 18
+    forecast_history_months: int = 3
     auth_enabled: bool = False
     admin_object_ids: str = ""
 

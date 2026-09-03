@@ -68,6 +68,7 @@ def build_live_request(
     programme_mappings: dict[str, Workstream],
     pipeline_learners: list[PipelineLearner],
     tutor_statuses: list[TutorStatusRecord] | None = None,
+    history_months: int = 0,
 ) -> ForecastRequest:
     tutor_statuses = consolidate_tutor_statuses(
         tutors=attendance_tutors,
@@ -176,6 +177,7 @@ def build_live_request(
     return ForecastRequest(
         as_of_date=as_of_date,
         months=months,
+        history_months=history_months,
         tutors=sorted(tutors, key=lambda tutor: (tutor.workstream, tutor.tutor_name)),
         existing_learners=existing_learners,
         pipeline_learners=pipeline_learners,

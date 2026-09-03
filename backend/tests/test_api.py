@@ -16,7 +16,7 @@ def test_demo_forecast_contract() -> None:
     response = client.get("/api/v1/forecast/demo")
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["months"]) == 18
+    assert len(payload["months"]) == 21
     assert {row["workstream"] for row in payload["workstream_months"]} == {
         "Dental",
         "Pharmacy",

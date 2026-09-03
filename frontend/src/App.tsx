@@ -5,6 +5,7 @@ import { ForecastView } from './ForecastView'
 import { PredictiveForecastView } from './PredictiveForecastView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
+import { defaultForecastMonth, localMonthKey, selectMonthOptions, selectRollingMonths } from './rollingMonths'
 import { reportingWorkstreams, type ForecastResponse, type TutorDiscoverySummary, type TutorMonth, type Workstream } from './types'
 import { calculateWorkstreamUtilisation } from './workstreamUtilisation'
 const demoForecast = createDemoForecast()
@@ -46,7 +47,7 @@ function App() {
   const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Utilisation' | 'Tutors'>('Dashboard')
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
-  const [selectedMonth, setSelectedMonth] = useState(demoForecast.months[0])
+  const [selectedMonth, setSelectedMonth] = useState(defaultForecastMonth(demoForecast.months))
   const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | 'All'>('All')
   const [search, setSearch] = useState('')
   const [scenarioOpen, setScenarioOpen] = useState(false)
@@ -62,7 +63,8 @@ function App() {
     if (!response.ok) throw new Error('Forecast API unavailable')
     const payload = await response.json() as ForecastResponse
     setForecast(payload)
-    setSelectedMonth((current) => payload.months.includes(current) ? current : payload.months[0])
+    const monthOptions = selectMonthOptions(payload.months)
+    setSelectedMonth((current) => monthOptions.includes(current) ? current : defaultForecastMonth(monthOptions))
     setDataMode('live')
   }, [])
 
@@ -124,9 +126,11 @@ function App() {
     }
   }, [capacityOverride, scenarioRows])
   const selectedStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
+  const monthOptions = selectMonthOptions(forecast.months)
+  const currentMonth = localMonthKey()
   const scenarioTutorCapacity = scenarioOpen ? capacityOverride : undefined
   const allWorkstreamUtilisation = calculateWorkstreamUtilisation(selectedStreamRows, scenarioTutorCapacity)
-  const trendRows = forecast.months.map((month) => {
+  const trendRows = selectRollingMonths(forecast.months, 18).map((month) => {
     const rows = forecast.workstream_months.filter(
       (row) => row.month === month && (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
     )
@@ -201,7 +205,7 @@ function App() {
             <label className="month-control">
               <span>Forecast month</span>
               <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)}>
-                {forecast.months.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
+                {monthOptions.map((month) => <option key={month} value={month}>{formatMonth(month)}{month < currentMonth ? ' (prior)' : ''}</option>)}
               </select>
             </label>
             <button className="scenario-button" onClick={() => setScenarioOpen((value) => !value)}>

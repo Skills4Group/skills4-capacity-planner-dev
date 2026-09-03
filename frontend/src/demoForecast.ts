@@ -22,12 +22,14 @@ function monthAt(index: number) {
 }
 
 export function createDemoForecast(): ForecastResponse {
-  const months = Array.from({ length: 18 }, (_, index) => monthAt(index))
+  const historyMonths = 3
+  const months = Array.from({ length: 21 }, (_, index) => monthAt(index - historyMonths))
   const tutorMonths = months.flatMap((month, monthIndex) =>
     tutors.map(([id, name, workstream, capacity, startingLoad], tutorIndex) => {
-      const forecastStarts = (monthIndex + tutorIndex * 2) % 5
-      const offboarded = (monthIndex * 2 + tutorIndex) % 4
-      const opening = Math.max(18, startingLoad + Math.floor(monthIndex * 0.45) - (tutorIndex % 3))
+      const relativeMonthIndex = monthIndex - historyMonths
+      const forecastStarts = ((relativeMonthIndex + tutorIndex * 2) % 5 + 5) % 5
+      const offboarded = ((relativeMonthIndex * 2 + tutorIndex) % 4 + 4) % 4
+      const opening = Math.max(18, startingLoad + Math.floor(relativeMonthIndex * 0.45) - (tutorIndex % 3))
       const peak = Math.max(opening, opening + forecastStarts - Math.floor(offboarded / 2))
       return {
         month,

@@ -110,6 +110,28 @@ def test_default_forecast_is_rolling_eighteen_months() -> None:
     assert result.months[-1] == date(2028, 1, 1)
 
 
+def test_optional_history_precedes_the_current_month_without_reducing_the_forecast() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 9, 3),
+        months=2,
+        history_months=3,
+        tutors=[],
+        existing_learners=[],
+        pipeline_learners=[],
+    )
+
+    result = build_forecast(request)
+
+    assert result.generated_at == date(2026, 9, 3)
+    assert result.months == [
+        date(2026, 6, 1),
+        date(2026, 7, 1),
+        date(2026, 8, 1),
+        date(2026, 9, 1),
+        date(2026, 10, 1),
+    ]
+
+
 def test_operations_tutors_and_learners_are_excluded_from_all_forecast_calculations() -> None:
     request = ForecastRequest(
         as_of_date=date(2026, 8, 1),

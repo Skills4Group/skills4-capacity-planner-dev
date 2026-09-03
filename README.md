@@ -19,6 +19,14 @@ user's current calendar month before applying the selected horizon. For example,
 six-month view opened in September runs from September through February rather than
 retaining August as its first column.
 
+Named month selectors include up to three months preceding the user's current month;
+in September this makes June, July, and August selectable and labels them as prior
+months. The API adds these retrospective rows without shortening the configured
+18-month forward forecast. Planning horizons on Forecast and Utilisation remain
+anchored to the current month. Retrospective figures are reconstructed from the
+latest read-only Attendance snapshot and effective-dated Capacity settings; they are
+not stored month-end snapshots.
+
 The Forecast tab includes a temporary scenario modeller. Users can override the
 projected active learner total for each month and calculated workstream; staffing
 requirements update immediately using current effective capacity and 50 places per

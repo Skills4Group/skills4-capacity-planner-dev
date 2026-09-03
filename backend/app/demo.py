@@ -84,6 +84,7 @@ def demo_request(as_of: date = date(2026, 8, 11)) -> ForecastRequest:
     return ForecastRequest(
         as_of_date=as_of,
         months=18,
+        history_months=3,
         tutors=DEMO_TUTORS,
         existing_learners=existing,
         pipeline_learners=pipeline,
