@@ -6,6 +6,7 @@ import type {
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
+  year: 'numeric',
   timeZone: 'UTC',
 })
 
@@ -32,7 +33,11 @@ interface ProgrammeDraft {
   starts: Record<string, string>
 }
 
-export function ProgrammePlanningPanel() {
+interface ProgrammePlanningPanelProps {
+  onSaved?: () => void | Promise<void>
+}
+
+export function ProgrammePlanningPanel({ onSaved }: ProgrammePlanningPanelProps) {
   const currentStart = currentAcademicYearStart()
   const years = useMemo(
     () => [currentStart - 1, currentStart, currentStart + 1, currentStart + 2].map(academicYear),
@@ -44,12 +49,12 @@ export function ProgrammePlanningPanel() {
   const [drafts, setDrafts] = useState<Record<string, ProgrammeDraft>>({})
   const [savingCode, setSavingCode] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const months = monthsForAcademicYear(selectedYear)
+  const months = useMemo(() => monthsForAcademicYear(selectedYear), [selectedYear])
 
   useEffect(() => {
     let active = true
     Promise.all([
-      fetch(`/api/v1/programme-planning?academic_year=${encodeURIComponent(selectedYear)}`)
+      fetch(`/api/v1/programme-planning?academic_year=${encodeURIComponent(selectedYear)}`, { cache: 'no-store' })
         .then((response) => response.ok ? response.json() as Promise<ProgrammePlanningResponse> : Promise.reject()),
       fetch('/api/v1/session')
         .then((response) => response.ok ? response.json() as Promise<SessionResponse> : Promise.reject()),
@@ -71,7 +76,7 @@ export function ProgrammePlanningPanel() {
       if (active) setError('Programme planning is temporarily unavailable.')
     })
     return () => { active = false }
-  }, [selectedYear])
+  }, [months, selectedYear])
 
   function changeDraft(programmeCode: string, change: Partial<ProgrammeDraft>) {
     setDrafts((current) => ({
@@ -107,8 +112,9 @@ export function ProgrammePlanningPanel() {
         },
       )))
       if (responses.some((response) => !response.ok)) throw new Error('One or more planned-start months could not be saved')
-      const refreshed = await fetch(`/api/v1/programme-planning?academic_year=${encodeURIComponent(selectedYear)}`)
+      const refreshed = await fetch(`/api/v1/programme-planning?academic_year=${encodeURIComponent(selectedYear)}`, { cache: 'no-store' })
       if (refreshed.ok) setPlanning(await refreshed.json() as ProgrammePlanningResponse)
+      await onSaved?.()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Programme planning could not be saved')
     } finally {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   applyPredictiveScenario,
   draftHasValues,
@@ -77,30 +77,27 @@ export function PredictiveForecastView({
   const [scenarioWorkstream, setScenarioWorkstream] = useState<Workstream>('Pharmacy')
   const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDrafts>({})
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        let response = await fetch('/api/v1/predictive-forecast')
-        let nextSource: 'live' | 'demo' = 'live'
-        if (!response.ok) {
-          response = await fetch('/api/v1/predictive-forecast/demo')
-          nextSource = 'demo'
-        }
-        if (!response.ok) throw new Error('Predictive forecast API unavailable')
-        const payload = await response.json() as PredictiveForecastResponse
-        if (!cancelled) {
-          setForecast(payload)
-          setSource(nextSource)
-          setError('')
-        }
-      } catch {
-        if (!cancelled) setError('Predictive forecasting is temporarily unavailable.')
+  const loadForecast = useCallback(async () => {
+    try {
+      let response = await fetch('/api/v1/predictive-forecast', { cache: 'no-store' })
+      let nextSource: 'live' | 'demo' = 'live'
+      if (!response.ok) {
+        response = await fetch('/api/v1/predictive-forecast/demo', { cache: 'no-store' })
+        nextSource = 'demo'
       }
+      if (!response.ok) throw new Error('Predictive forecast API unavailable')
+      const payload = await response.json() as PredictiveForecastResponse
+      setForecast(payload)
+      setSource(nextSource)
+      setError('')
+    } catch {
+      setError('Predictive forecasting is temporarily unavailable.')
     }
-    void load()
-    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    void loadForecast()
+  }, [loadForecast])
 
   useEffect(() => {
     if (selectedWorkstream !== 'All' && selectedWorkstream !== 'Operations') {
@@ -253,7 +250,7 @@ export function PredictiveForecastView({
         <dl><div><dt>Training period</dt><dd>{formatMonth(forecast.training_start)}–{formatMonth(forecast.training_end)}</dd></div><div><dt>Generated</dt><dd>{formatDate(forecast.generated_at)}</dd></div></dl>
       </section>
 
-      {source === 'live' && <ProgrammePlanningPanel />}
+      {source === 'live' && <ProgrammePlanningPanel onSaved={loadForecast} />}
 
       {scenarioOpen && (
         <section className="predictive-scenario-card" aria-labelledby="predictive-scenario-title">
