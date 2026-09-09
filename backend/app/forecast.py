@@ -47,6 +47,12 @@ def active_on(record: AssignedLearner, day: date) -> bool:
     return record.start_date <= day <= record.end_date
 
 
+def tutor_capacity_on(tutor: Tutor, day: date) -> int:
+    if tutor.available_from is not None and day < tutor.available_from:
+        return 0
+    return tutor.capacity
+
+
 def days_in_month(start: date):
     current = start
     final = month_end(start)
@@ -93,7 +99,8 @@ def allocate_pipeline(
         candidates = [
             tutor
             for tutor in tutors.values()
-            if tutor.workstream == learner.workstream and tutor.capacity > 0
+            if tutor.workstream == learner.workstream
+            and tutor_capacity_on(tutor, learner.start_date) > 0
         ]
 
         def candidate_score(tutor: Tutor) -> tuple[float, int, str]:
@@ -103,11 +110,17 @@ def allocate_pipeline(
                 if record.tutor_id == tutor.tutor_id
                 and active_on(record, learner.start_date)
             )
-            return (load / tutor.capacity, load, tutor.tutor_id)
+            capacity = tutor_capacity_on(tutor, learner.start_date)
+            return (load / capacity, load, tutor.tutor_id)
 
         candidates.sort(key=candidate_score)
         selected = next(
-            (tutor for tutor in candidates if candidate_score(tutor)[1] < tutor.capacity),
+            (
+                tutor
+                for tutor in candidates
+                if candidate_score(tutor)[1]
+                < tutor_capacity_on(tutor, learner.start_date)
+            ),
             None,
         )
 
@@ -184,13 +197,14 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
     for month in months:
         end = month_end(month)
         for tutor in tutors.values():
+            monthly_capacity = tutor_capacity_on(tutor, month)
             records = [
                 record for record in all_assigned if record.tutor_id == tutor.tutor_id
             ]
             opening = distinct_active_count(records, month)
             closing = distinct_active_count(records, end)
             peak = peak_count(records, month)
-            remaining = tutor.capacity - peak
+            remaining = monthly_capacity - peak
             existing_starts = len(
                 {
                     record.learner_id
@@ -220,7 +234,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     tutor_id=tutor.tutor_id,
                     tutor_name=tutor.tutor_name,
                     workstream=tutor.workstream,
-                    capacity=tutor.capacity,
+                    capacity=monthly_capacity,
                     opening_caseload=opening,
                     existing_starts=existing_starts,
                     forecast_starts=forecast_starts,
@@ -229,8 +243,8 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     peak_caseload=peak,
                     remaining_capacity=remaining,
                     utilisation_percent=(
-                        round((peak / tutor.capacity) * 100, 1)
-                        if tutor.capacity
+                        round((peak / monthly_capacity) * 100, 1)
+                        if monthly_capacity
                         else 0
                     ),
                 )
@@ -261,7 +275,9 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 *stream_pipeline_unallocated,
                 *stream_unallocated_existing,
             ]
-            total_capacity = sum(tutor.capacity for tutor in stream_tutors)
+            total_capacity = sum(
+                tutor_capacity_on(tutor, month) for tutor in stream_tutors
+            )
             assigned_peak = peak_count(stream_records, month)
             unallocated_peak = max(
                 (

@@ -6,7 +6,7 @@ from math import ceil, sqrt
 from statistics import median
 
 from .adapters.attendance import AttendanceLearnerRecord
-from .forecast import add_months, month_end, month_start
+from .forecast import add_months, month_end, month_start, tutor_capacity_on
 from .live_forecast import map_programme
 from .models import (
     CAPACITY_CONSUMING_STATUSES,
@@ -14,6 +14,8 @@ from .models import (
     PredictiveForecastResponse,
     PredictiveWorkstreamMonth,
     PredictiveWorkstreamSummary,
+    PlannedCohortRecord,
+    ProgrammePlanningRecord,
     REPORTING_WORKSTREAMS,
     Workstream,
 )
@@ -165,7 +167,11 @@ def build_predictive_forecast(
     attendance_learners: list[AttendanceLearnerRecord],
     forecast_request: ForecastRequest,
     programme_mappings: dict[str, Workstream],
+    programmes: list[ProgrammePlanningRecord] | None = None,
+    planned_cohorts: list[PlannedCohortRecord] | None = None,
 ) -> PredictiveForecastResponse:
+    programmes = [programme for programme in (programmes or []) if programme.active]
+    planned_cohorts = planned_cohorts or []
     forecast_months = _month_sequence(add_months(month_start(as_of_date), 1), months)
     training_end = add_months(month_start(as_of_date), -1)
     training_start = add_months(training_end, -(MAX_TRAINING_MONTHS - 1))
@@ -181,7 +187,7 @@ def build_predictive_forecast(
     }
     capacities = Counter[Workstream]()
     for tutor in tutors.values():
-        capacities[tutor.workstream] += tutor.capacity
+        capacities[tutor.workstream] += tutor_capacity_on(tutor, as_of_date)
 
     history_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
     earliest_history: dict[Workstream, date] = {}
@@ -207,6 +213,30 @@ def build_predictive_forecast(
     durations = _duration_months(
         attendance_learners, programme_mappings, tutor_workstreams
     )
+    programme_by_code = {
+        programme.programme_code: programme for programme in programmes
+    }
+    configured_durations: dict[Workstream, list[int]] = defaultdict(list)
+    for programme in programmes:
+        if programme.workstream in REPORTING_WORKSTREAMS:
+            configured_durations[programme.workstream].append(
+                programme.duration_months
+            )
+    for workstream, values in configured_durations.items():
+        if values:
+            durations[workstream] = round(sum(values) / len(values))
+
+    planned_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
+    planned_duration_totals: dict[tuple[Workstream, date], int] = defaultdict(int)
+    for cohort in planned_cohorts:
+        programme = programme_by_code.get(cohort.programme_code)
+        if not programme or programme.workstream not in REPORTING_WORKSTREAMS:
+            continue
+        cohort_month = month_start(cohort.start_month)
+        planned_counts[programme.workstream][cohort_month] += cohort.planned_starts
+        planned_duration_totals[(programme.workstream, cohort_month)] += (
+            cohort.planned_starts * programme.duration_months
+        )
     existing_by_stream = defaultdict(list)
     valid_statuses = {status.value for status in CAPACITY_CONSUMING_STATUSES}
     for learner in forecast_request.existing_learners:
@@ -238,6 +268,7 @@ def build_predictive_forecast(
         observed_months = min(MAX_TRAINING_MONTHS, observed_months)
         duration = durations[workstream]
         predicted_starts: dict[str, list[int]] = {"p50": [], "p80": [], "p90": []}
+        predicted_durations: list[int] = []
         stream_rows: list[PredictiveWorkstreamMonth] = []
 
         for index, month in enumerate(forecast_months):
@@ -245,11 +276,19 @@ def build_predictive_forecast(
                 training_months, values, month, index
             )
             known_starts = pipeline_counts[workstream][month]
+            planned_starts = planned_counts[workstream][month]
             starts = {
-                "p50": max(p50, known_starts),
-                "p80": max(p80, known_starts),
-                "p90": max(p90, known_starts),
+                "p50": max(p50, known_starts, planned_starts),
+                "p80": max(p80, known_starts, planned_starts),
+                "p90": max(p90, known_starts, planned_starts),
             }
+            predicted_durations.append(
+                round(
+                    planned_duration_totals[(workstream, month)] / planned_starts
+                )
+                if planned_starts
+                else duration
+            )
             for key in predicted_starts:
                 predicted_starts[key].append(starts[key])
 
@@ -267,11 +306,15 @@ def build_predictive_forecast(
                 cohort_total = sum(
                     predicted_starts[key][cohort_index]
                     for cohort_index in range(index + 1)
-                    if index - cohort_index < duration
+                    if index - cohort_index < predicted_durations[cohort_index]
                 )
                 active[key] = existing_active + cohort_total
 
-            capacity = capacities[workstream]
+            capacity = sum(
+                tutor_capacity_on(tutor, month)
+                for tutor in tutors.values()
+                if tutor.workstream == workstream
+            )
             stream_rows.append(
                 PredictiveWorkstreamMonth(
                     month=month,
@@ -345,8 +388,8 @@ def build_predictive_forecast(
 
     warnings = [
         "Predictions use each learner's latest Attendance record; historical status-transition dates are not available.",
-        "The current partial month is excluded from training, and current tutor capacity is held constant across the horizon.",
-        "Known pipeline starts are used as a minimum where they exceed the statistical prediction.",
+        "The current partial month is excluded from training. Capacity changes at configured maternity return months; other current tutor settings are held constant.",
+            "Known pipeline and planned programme starts are used as minimums where they exceed the statistical prediction.",
     ]
     if missing_start:
         warnings.append(

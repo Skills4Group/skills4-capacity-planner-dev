@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { selectRollingMonths } from './rollingMonths'
 import { reportingWorkstreams, type ForecastResponse, type Workstream } from './types'
 
@@ -30,6 +30,9 @@ export function UtilisationView({
   onWorkstreamChange,
 }: UtilisationViewProps) {
   const [horizon, setHorizon] = useState<6 | 12 | 18>(6)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const gridScrollRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
   const months = selectRollingMonths(forecast.months, horizon)
 
   const tutors = useMemo(() => {
@@ -52,6 +55,29 @@ export function UtilisationView({
       ),
     [forecast.tutor_months],
   )
+
+  useEffect(() => {
+    const top = topScrollRef.current
+    const grid = gridScrollRef.current
+    const table = tableRef.current
+    if (!top || !grid || !table) return
+    const spacer = top.firstElementChild as HTMLElement | null
+    const syncWidth = () => {
+      if (spacer) spacer.style.width = `${table.scrollWidth}px`
+    }
+    const topToGrid = () => { grid.scrollLeft = top.scrollLeft }
+    const gridToTop = () => { top.scrollLeft = grid.scrollLeft }
+    syncWidth()
+    const observer = new ResizeObserver(syncWidth)
+    observer.observe(table)
+    top.addEventListener('scroll', topToGrid)
+    grid.addEventListener('scroll', gridToTop)
+    return () => {
+      observer.disconnect()
+      top.removeEventListener('scroll', topToGrid)
+      grid.removeEventListener('scroll', gridToTop)
+    }
+  }, [months, tutors])
 
   return (
     <>
@@ -98,8 +124,9 @@ export function UtilisationView({
           </p>
         </div>
 
-        <div className="utilisation-grid-wrap">
-          <table className="utilisation-grid">
+        <div className="utilisation-top-scroll" ref={topScrollRef} aria-label="Scroll tutor caseload grid horizontally"><div /></div>
+        <div className="utilisation-grid-wrap" ref={gridScrollRef}>
+          <table className="utilisation-grid" ref={tableRef}>
             <thead>
               <tr>
                 <th className="sticky-tutor" rowSpan={2}>Tutor</th>

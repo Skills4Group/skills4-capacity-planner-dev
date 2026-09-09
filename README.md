@@ -34,6 +34,22 @@ additional tutor. Scenario values are browser-local state and are never persiste
 
 ## Predictive forecasting
 
+Administrators can maintain planned starts for every programme and month in an
+academic year (September through August), together with a programme-specific
+duration of 3–60 months. A planned programme intake becomes a minimum for its parent
+workstream's monthly start forecast, alongside known Bud/CRM pipeline starts:
+
+```text
+forecast_starts = max(statistical_starts, known_pipeline_starts, planned_programme_starts)
+```
+
+Where a month contains planned programme starts, the cohort duration is the
+start-weighted average of those programmes' configured durations. Otherwise the
+model uses the configured average for active programmes in the workstream. This
+keeps Pharmacy L2, Pharmacy L3, and Technical Services planning distinct while
+retaining the existing workstream-level staffing output. Plans are stored in the
+Capacity database only.
+
 The Predictive Forecasting tab estimates future starts and active learner demand
 from up to 36 complete months of Attendance start-date history. It blends recent
 demand with seasonal history, limits the effect of short-term trends, uses scheduled
@@ -150,10 +166,10 @@ predicted_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
 
 #### 7. Capacity gap and additional tutors
 
-Effective capacity is the sum of current tutor capacity settings in that workstream.
-A tutor marked as on maternity leave contributes zero effective capacity. Operations
-tutors and learners contribute nothing. Capacity is held constant over the forecast
-horizon until future-dated staffing settings are implemented.
+Effective capacity is the sum of tutor capacity settings in that workstream. A tutor
+marked as on maternity leave contributes zero until the configured return month,
+when their saved capacity is restored. Operations tutors and learners contribute
+nothing. Other current tutor settings remain constant over the forecast horizon.
 
 ```text
 effective_capacity = sum(effective tutor capacities in the workstream)
@@ -238,8 +254,11 @@ capacity, workstream, and maternity-leave changes in the Capacity-owned
 `capacity.tutor_setting` table. Changes are effective-dated and record the
 signed-in administrator in `updated_by`; no tutor data is written to Attendance.
 Capacity may be set from 0 to 250. A maternity-leave flag preserves the configured
-capacity but temporarily sets the tutor's effective forecast capacity to zero until
-an administrator clears the flag.
+capacity but temporarily sets the tutor's effective forecast capacity to zero. An
+optional return month restores that capacity from the first day of the selected
+month. Administrators can also mark a person as non-delivery; this removes their
+headcount and capacity from every calculation while retaining their active learners
+as demand requiring reassignment.
 
 The tutor directory calculates each tutor's current utilisation as
 `current learners / maximum capacity * 100`, rounded to one decimal place. It uses
@@ -257,6 +276,13 @@ retained as unallocated demand so the app continues to show the learner places a
 replacement tutors required. Migration
 `backend/migrations/005_add_tutor_status.sql` creates this audit history; it makes no
 change to Attendance.
+
+Migration `backend/migrations/006_programme_and_workforce_planning.sql` creates the
+programme catalogue, multi-programme tutor-allocation structure, planned tutor,
+planned cohort, and cohort reservation structures. It also adds maternity return
+dates and delivery eligibility to effective-dated tutor settings. The Utilisation
+grid exposes a synchronized horizontal scrollbar above the table so long horizons
+can be navigated without first scrolling to the final tutor row.
 
 Attendance occasionally exposes the same tutor once with an internal fallback ID
 and once with a proper external ID. Capacity Tracker consolidates that unambiguous

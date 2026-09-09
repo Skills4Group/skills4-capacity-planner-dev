@@ -48,6 +48,7 @@ class Tutor(BaseModel):
     tutor_name: str
     workstream: Workstream
     capacity: int = Field(default=50, ge=0, le=250)
+    available_from: date | None = None
 
 
 class ExistingLearner(BaseModel):
@@ -212,6 +213,8 @@ class TutorAdminRecord(BaseModel):
     capacity: int
     effective_capacity: int
     on_maternity_leave: bool
+    maternity_return_date: date | None = None
+    delivery_eligible: bool = True
     current_caseload: int
     remaining_capacity: int
     has_saved_setting: bool
@@ -254,6 +257,14 @@ class TutorUpdateRequest(BaseModel):
     capacity: int = Field(ge=0, le=250)
     workstream: Workstream
     on_maternity_leave: bool = False
+    maternity_return_date: date | None = None
+    delivery_eligible: bool = True
+
+    @model_validator(mode="after")
+    def validate_maternity_return(self) -> "TutorUpdateRequest":
+        if not self.on_maternity_leave and self.maternity_return_date is not None:
+            raise ValueError("maternity_return_date requires on_maternity_leave")
+        return self
 
 
 class TutorUpdateResponse(BaseModel):
@@ -261,6 +272,8 @@ class TutorUpdateResponse(BaseModel):
     capacity: int
     workstream: Workstream
     on_maternity_leave: bool
+    maternity_return_date: date | None = None
+    delivery_eligible: bool = True
     updated_by: str
     effective_from: date
 
@@ -274,3 +287,36 @@ class TutorStatusUpdateResponse(BaseModel):
     is_active: bool
     updated_by: str
     effective_from: date
+
+
+class ProgrammePlanningRecord(BaseModel):
+    programme_code: str
+    display_name: str
+    workstream: Workstream
+    level: str | None = None
+    duration_months: int = Field(ge=3, le=60)
+    active: bool
+
+
+class PlannedCohortRecord(BaseModel):
+    programme_code: str
+    start_month: date
+    academic_year: str
+    planned_starts: int = Field(ge=0)
+    notes: str | None = None
+
+
+class ProgrammePlanningResponse(BaseModel):
+    academic_year: str
+    programmes: list[ProgrammePlanningRecord]
+    cohorts: list[PlannedCohortRecord]
+
+
+class ProgrammeUpdateRequest(BaseModel):
+    duration_months: int = Field(ge=3, le=60)
+    active: bool = True
+
+
+class PlannedCohortUpdateRequest(BaseModel):
+    planned_starts: int = Field(ge=0, le=10000)
+    notes: str | None = Field(default=None, max_length=1000)

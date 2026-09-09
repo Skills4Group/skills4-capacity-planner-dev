@@ -13,6 +13,8 @@ WORKDIR /app
 RUN addgroup --system capacity && adduser --system --ingroup capacity capacity
 COPY backend/pyproject.toml ./pyproject.toml
 COPY backend/app ./app
+COPY backend/migrations ./migrations
+COPY backend/scripts ./scripts
 RUN pip install --no-cache-dir ".[database]"
 COPY --from=frontend-build /frontend/dist ./static
 USER capacity

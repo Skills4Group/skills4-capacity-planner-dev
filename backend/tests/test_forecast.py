@@ -97,6 +97,30 @@ def test_zero_capacity_tutor_is_unavailable_without_division_error() -> None:
     assert business.additional_tutors_required == 1
 
 
+def test_maternity_return_restores_capacity_from_return_month() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 9, 1),
+        months=3,
+        tutors=[
+            Tutor(
+                tutor_id="T1",
+                tutor_name="Returning Tutor",
+                workstream=Workstream.PHARMACY,
+                capacity=40,
+                available_from=date(2026, 11, 1),
+            )
+        ],
+        existing_learners=[],
+        pipeline_learners=[],
+    )
+
+    result = build_forecast(request)
+    rows = [row for row in result.tutor_months if row.tutor_id == "T1"]
+
+    assert [row.capacity for row in rows] == [0, 0, 40]
+    assert [row.remaining_capacity for row in rows] == [0, 0, 40]
+
+
 def test_default_forecast_is_rolling_eighteen_months() -> None:
     request = ForecastRequest(
         as_of_date=date(2026, 8, 11),

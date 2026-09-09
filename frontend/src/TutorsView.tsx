@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  reportingWorkstreams,
   workstreams,
   type SessionResponse,
   type TutorAdminRecord,
@@ -12,6 +13,8 @@ interface TutorDraft {
   capacity: string
   workstream: Workstream | ''
   onMaternityLeave: boolean
+  maternityReturnDate: string
+  deliveryEligible: boolean
 }
 
 interface TutorsViewProps {
@@ -39,7 +42,7 @@ export function TutorsView({
   const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, display_name: null })
   const [drafts, setDrafts] = useState<Record<string, TutorDraft>>({})
   const [search, setSearch] = useState('')
-  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive'>('All')
+  const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive' | 'Non-delivery'>('All')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -63,6 +66,8 @@ export function TutorsView({
         capacity: String(tutor.capacity),
         workstream: tutor.workstream ?? '',
         onMaternityLeave: tutor.on_maternity_leave,
+        maternityReturnDate: tutor.maternity_return_date ?? '',
+        deliveryEligible: tutor.delivery_eligible,
       },
     ])))
   }, [onDiscoveryCountChange])
@@ -92,20 +97,27 @@ export function TutorsView({
             ? tutor.is_new
             : workstreamFilter === 'Inactive'
               ? !tutor.is_active
+              : workstreamFilter === 'Non-delivery'
+                ? tutor.is_active && !tutor.delivery_eligible
               : tutor.workstream === workstreamFilter)
       return matchesSearch && matchesWorkstream
     })
   }, [search, tutors, workstreamFilter])
 
   const summary = useMemo(() => ({
-    active: tutors.filter((tutor) => tutor.is_active).length,
+    active: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)).length,
     inactive: tutors.filter((tutor) => !tutor.is_active).length,
+    nonDelivery: tutors.filter((tutor) => tutor.is_active && !tutor.delivery_eligible).length,
     configured: tutors.filter((tutor) => tutor.has_saved_setting).length,
     custom: tutors.filter((tutor) => tutor.is_active && tutor.capacity !== 50).length,
-    maternity: tutors.filter((tutor) => tutor.is_active && tutor.on_maternity_leave).length,
+    maternity: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && tutor.on_maternity_leave && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)).length,
     unassigned: tutors.filter((tutor) => tutor.is_active && tutor.workstream === null).length,
     newTutors: tutors.filter((tutor) => tutor.is_new).length,
-    places: tutors.reduce((sum, tutor) => sum + tutor.effective_capacity, 0),
+    places: tutors.reduce((sum, tutor) => (
+      tutor.is_active && tutor.delivery_eligible && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)
+        ? sum + tutor.effective_capacity
+        : sum
+    ), 0),
   }), [tutors])
 
   function changeDraft(tutorId: string, change: Partial<TutorDraft>) {
@@ -130,6 +142,10 @@ export function TutorsView({
           capacity,
           workstream: draft.workstream,
           on_maternity_leave: draft.onMaternityLeave,
+          maternity_return_date: draft.onMaternityLeave && draft.maternityReturnDate
+            ? draft.maternityReturnDate
+            : null,
+          delivery_eligible: draft.deliveryEligible,
         }),
       })
       if (!response.ok) {
@@ -221,6 +237,7 @@ export function TutorsView({
       <section className="tutor-summary-grid" aria-label="Tutor configuration summary">
         <article><span>Active tutors</span><strong>{summary.active}</strong><small>included in forecasts</small></article>
         <article className={summary.inactive ? 'attention' : ''}><span>Inactive tutors</span><strong>{summary.inactive}</strong><small>excluded from calculations</small></article>
+        <article className={summary.nonDelivery ? 'attention' : ''}><span>Non-delivery</span><strong>{summary.nonDelivery}</strong><small>excluded from calculations</small></article>
         <article><span>Configured</span><strong>{summary.configured}</strong><small>saved settings</small></article>
         <article><span>Custom capacity</span><strong>{summary.custom}</strong><small>not using 50</small></article>
         <article className={summary.maternity ? 'attention' : ''}><span>Maternity leave</span><strong>{summary.maternity}</strong><small>currently unavailable</small></article>
@@ -233,10 +250,10 @@ export function TutorsView({
           <div>
             <p className="eyebrow">Capacity settings</p>
             <h2>Tutor directory</h2>
-            <p>Deactivated tutors contribute no staff or capacity, but their learners remain forecast demand requiring reassignment. Attendance is never updated.</p>
+            <p>Only active delivery tutors contribute capacity. Maternity return dates restore capacity from the first day of that month. Attendance is never updated.</p>
           </div>
           <div className="tutor-tools">
-            <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
+            <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option><option>Non-delivery</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
           </div>
         </div>
@@ -246,30 +263,35 @@ export function TutorsView({
 
         <div className="tutor-admin-table-wrap">
           <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Maternity leave</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
+            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Delivery role</th><th>Maternity leave</th><th>Return month</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="empty-row">Loading tutors…</td></tr>
+                <tr><td colSpan={12} className="empty-row">Loading tutors…</td></tr>
               ) : visibleTutors.length === 0 ? (
-                <tr><td colSpan={10} className="empty-row">No tutors match these filters.</td></tr>
+                <tr><td colSpan={12} className="empty-row">No tutors match these filters.</td></tr>
               ) : visibleTutors.map((tutor) => {
                 const draft = drafts[tutor.tutor_id] ?? {
                   capacity: String(tutor.capacity),
                   workstream: tutor.workstream ?? '',
                   onMaternityLeave: tutor.on_maternity_leave,
+                  maternityReturnDate: tutor.maternity_return_date ?? '',
+                  deliveryEligible: tutor.delivery_eligible,
                 }
                 const draftCapacity = Number(draft.capacity)
                 const validCapacity = Number.isInteger(draftCapacity) && draftCapacity >= 0 && draftCapacity <= 250
                 const dirty = draftCapacity !== tutor.capacity
                   || draft.workstream !== (tutor.workstream ?? '')
                   || draft.onMaternityLeave !== tutor.on_maternity_leave
-                const effectiveCapacity = draft.onMaternityLeave || !tutor.is_active ? 0 : draftCapacity
-                const remaining = !tutor.is_active ? 0 : validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
+                  || draft.maternityReturnDate !== (tutor.maternity_return_date ?? '')
+                  || draft.deliveryEligible !== tutor.delivery_eligible
+                const onLeaveNow = draft.onMaternityLeave && (!draft.maternityReturnDate || new Date(`${draft.maternityReturnDate}T00:00:00Z`) > new Date())
+                const effectiveCapacity = onLeaveNow || !tutor.is_active || !draft.deliveryEligible ? 0 : draftCapacity
+                const remaining = !tutor.is_active || !draft.deliveryEligible ? 0 : validCapacity ? effectiveCapacity - tutor.current_caseload : tutor.remaining_capacity
                 const utilisation = calculateTutorUtilisation({
                   currentLearners: tutor.current_caseload,
                   capacity: draftCapacity,
                   isActive: tutor.is_active,
-                  onMaternityLeave: draft.onMaternityLeave,
+                  onMaternityLeave: onLeaveNow,
                 })
                 return (
                   <tr key={tutor.tutor_id} className={`${tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
@@ -277,7 +299,9 @@ export function TutorsView({
                     <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
                     <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
+                    <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} delivery tutor`} type="checkbox" checked={draft.deliveryEligible} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { deliveryEligible: event.target.checked })} /><span>{draft.deliveryEligible ? 'Delivery' : 'Non-delivery'}</span></label></td>
                     <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} on maternity leave`} type="checkbox" checked={draft.onMaternityLeave} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { onMaternityLeave: event.target.checked })} /><span>{draft.onMaternityLeave ? 'On leave' : 'Available'}</span></label></td>
+                    <td><input className="return-month-input" aria-label={`${tutor.tutor_name} maternity return month`} type="month" value={draft.maternityReturnDate ? draft.maternityReturnDate.slice(0, 7) : ''} disabled={!session.is_admin || !tutor.is_active || !draft.onMaternityLeave} onChange={(event) => changeDraft(tutor.tutor_id, { maternityReturnDate: event.target.value ? `${event.target.value}-01` : '' })} /></td>
                     <td><span className={`tutor-status-pill ${tutor.is_active ? 'active' : 'inactive'}`}>{tutor.is_active ? 'Active' : 'Inactive'}</span>{tutor.status_updated_by && <small>by {tutor.status_updated_by}</small>}</td>
                     <td>{tutor.is_active ? <strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong> : <span className="excluded-capacity">Excluded</span>}</td>
                     <td><span className={`tutor-utilisation-pill ${utilisation.tone}`} title={utilisation.percent === null ? utilisation.label : `${tutor.current_caseload} of ${draftCapacity} learner places`}>{utilisation.label}</span></td>

@@ -84,12 +84,16 @@ def build_live_request(
     inactive_tutor_ids = {
         tutor_id for tutor_id, status in statuses_by_id.items() if not status.is_active
     }
+    non_delivery_tutor_ids = {
+        setting.tutor_id for setting in tutor_settings if not setting.delivery_eligible
+    }
+    excluded_tutor_ids = inactive_tutor_ids | non_delivery_tutor_ids
     inferred = infer_tutor_workstreams(attendance_learners, programme_mappings)
 
     tutor_directory = {tutor.tutor_id: tutor for tutor in attendance_tutors}
     tutors: list[Tutor] = []
     for tutor_id, directory_record in tutor_directory.items():
-        if tutor_id in inactive_tutor_ids:
+        if tutor_id in excluded_tutor_ids:
             continue
         setting = settings_by_id.get(tutor_id)
         if setting:
@@ -98,7 +102,17 @@ def build_live_request(
                     tutor_id=tutor_id,
                     tutor_name=setting.tutor_name or directory_record.tutor_name,
                     workstream=setting.workstream,
-                    capacity=0 if setting.on_maternity_leave else setting.capacity,
+                    capacity=(
+                        0
+                        if setting.on_maternity_leave
+                        and setting.maternity_return_date is None
+                        else setting.capacity
+                    ),
+                    available_from=(
+                        setting.maternity_return_date
+                        if setting.on_maternity_leave
+                        else None
+                    ),
                 )
             )
         elif tutor_id in inferred:
@@ -117,14 +131,24 @@ def build_live_request(
     for setting in tutor_settings:
         if (
             setting.tutor_id not in existing_tutor_ids
-            and setting.tutor_id not in inactive_tutor_ids
+            and setting.tutor_id not in excluded_tutor_ids
         ):
             tutors.append(
                 Tutor(
                     tutor_id=setting.tutor_id,
                     tutor_name=setting.tutor_name,
                     workstream=setting.workstream,
-                    capacity=0 if setting.on_maternity_leave else setting.capacity,
+                    capacity=(
+                        0
+                        if setting.on_maternity_leave
+                        and setting.maternity_return_date is None
+                        else setting.capacity
+                    ),
+                    available_from=(
+                        setting.maternity_return_date
+                        if setting.on_maternity_leave
+                        else None
+                    ),
                 )
             )
 
@@ -152,7 +176,7 @@ def build_live_request(
                 )
             )
             continue
-        if record.tutor_id not in inactive_tutor_ids:
+        if record.tutor_id not in excluded_tutor_ids:
             continue
         setting = settings_by_id.get(record.tutor_id)
         workstream = (

@@ -15,6 +15,8 @@ SELECT DISTINCT ON (attendance_tutor_id)
     w.display_name,
     max_learners,
     on_maternity_leave,
+    maternity_return_date,
+    delivery_eligible,
     effective_from,
     updated_at,
     updated_by
@@ -73,6 +75,8 @@ class TutorSettingRecord:
     updated_at: datetime | None = None
     updated_by: str | None = None
     on_maternity_leave: bool = False
+    maternity_return_date: date | None = None
+    delivery_eligible: bool = True
 
 
 @dataclass(frozen=True)
@@ -244,9 +248,11 @@ def fetch_tutor_configuration(
                     workstream=Workstream(row[2]),
                     capacity=row[3],
                     on_maternity_leave=row[4],
-                    effective_from=row[5],
-                    updated_at=row[6],
-                    updated_by=row[7],
+                    maternity_return_date=row[5],
+                    delivery_eligible=row[6],
+                    effective_from=row[7],
+                    updated_at=row[8],
+                    updated_by=row[9],
                 )
                 for row in cursor.fetchall()
             ]
@@ -268,6 +274,8 @@ def save_tutor_setting(
     workstream: Workstream,
     capacity: int,
     on_maternity_leave: bool,
+    maternity_return_date: date | None,
+    delivery_eligible: bool,
     effective_from: date,
     updated_by: str,
 ) -> None:
@@ -314,6 +322,8 @@ def save_tutor_setting(
                     workstream_code,
                     max_learners,
                     on_maternity_leave,
+                    maternity_return_date,
+                    delivery_eligible,
                     effective_from,
                     effective_to,
                     active,
@@ -326,6 +336,8 @@ def save_tutor_setting(
                     %(workstream_code)s,
                     %(capacity)s,
                     %(on_maternity_leave)s,
+                    %(maternity_return_date)s,
+                    %(delivery_eligible)s,
                     %(effective_from)s,
                     NULL,
                     true,
@@ -338,6 +350,8 @@ def save_tutor_setting(
                     workstream_code = EXCLUDED.workstream_code,
                     max_learners = EXCLUDED.max_learners,
                     on_maternity_leave = EXCLUDED.on_maternity_leave,
+                    maternity_return_date = EXCLUDED.maternity_return_date,
+                    delivery_eligible = EXCLUDED.delivery_eligible,
                     effective_to = NULL,
                     active = true,
                     updated_at = now(),
@@ -349,6 +363,8 @@ def save_tutor_setting(
                     "workstream_code": workstream_code,
                     "capacity": capacity,
                     "on_maternity_leave": on_maternity_leave,
+                    "maternity_return_date": maternity_return_date,
+                    "delivery_eligible": delivery_eligible,
                     "effective_from": effective_from,
                     "updated_by": updated_by,
                 },

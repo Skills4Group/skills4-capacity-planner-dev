@@ -113,6 +113,8 @@ export interface TutorAdminRecord {
   capacity: number
   effective_capacity: number
   on_maternity_leave: boolean
+  maternity_return_date: string | null
+  delivery_eligible: boolean
   current_caseload: number
   remaining_capacity: number
   has_saved_setting: boolean
@@ -147,4 +149,27 @@ export interface SessionResponse {
   authenticated: boolean
   is_admin: boolean
   display_name: string | null
+}
+
+export interface ProgrammePlanningRecord {
+  programme_code: string
+  display_name: string
+  workstream: Workstream
+  level: string | null
+  duration_months: number
+  active: boolean
+}
+
+export interface PlannedCohortRecord {
+  programme_code: string
+  start_month: string
+  academic_year: string
+  planned_starts: number
+  notes: string | null
+}
+
+export interface ProgrammePlanningResponse {
+  academic_year: string
+  programmes: ProgrammePlanningRecord[]
+  cohorts: PlannedCohortRecord[]
 }

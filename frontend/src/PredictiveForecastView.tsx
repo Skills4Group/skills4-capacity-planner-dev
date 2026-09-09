@@ -14,6 +14,7 @@ import {
   type PredictiveWorkstreamSummary,
   type Workstream,
 } from './types'
+import { ProgrammePlanningPanel } from './ProgrammePlanningPanel'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -251,6 +252,8 @@ export function PredictiveForecastView({
         <div><span className={`source-pill ${source}`}>{source === 'live' ? 'Live Attendance data' : 'Demonstration data'}</span><strong>{confidenceCopy[confidence].label}</strong>{selectedScenarioCount > 0 && <span className="scenario-live-pill">Scenario applied</span>}<p>{confidenceCopy[confidence].description}. {forecast.method_description}</p></div>
         <dl><div><dt>Training period</dt><dd>{formatMonth(forecast.training_start)}–{formatMonth(forecast.training_end)}</dd></div><div><dt>Generated</dt><dd>{formatDate(forecast.generated_at)}</dd></div></dl>
       </section>
+
+      {source === 'live' && <ProgrammePlanningPanel />}
 
       {scenarioOpen && (
         <section className="predictive-scenario-card" aria-labelledby="predictive-scenario-title">

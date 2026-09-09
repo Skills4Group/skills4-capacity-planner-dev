@@ -664,6 +664,59 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   scrollbar-width: thin;
 }
 
+.utilisation-top-scroll {
+  max-width: calc(100% - 44px);
+  height: 15px;
+  margin: 0 22px 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-color: #b7bdca #f0f1f5;
+  scrollbar-width: thin;
+}
+
+.utilisation-top-scroll > div {
+  height: 1px;
+}
+
+.return-month-input {
+  min-width: 132px;
+  padding: 9px 10px;
+  border: 1px solid #d7dbe5;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.programme-planning-card {
+  margin-top: 22px;
+  padding: 22px;
+  border: 1px solid #d8dce6;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.programme-planning-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.programme-planning-heading h2 { margin: 3px 0 4px; }
+.programme-planning-heading p:last-child { margin: 0; color: #687087; }
+.programme-planning-heading label { display: grid; gap: 5px; color: #687087; font-size: 11px; }
+.programme-planning-heading select { min-width: 120px; padding: 9px; border: 1px solid #d8dce6; border-radius: 6px; background: #fff; }
+.programme-planning-table-wrap { max-width: 100%; overflow: auto; }
+.programme-planning-table { width: max-content; min-width: 100%; border-collapse: collapse; }
+.programme-planning-table th, .programme-planning-table td { padding: 9px; border: 1px solid #e0e3ea; text-align: left; white-space: nowrap; }
+.programme-planning-table th { background: #f7f7fa; color: #60697d; font-size: 10px; text-transform: uppercase; }
+.programme-planning-table td strong, .programme-planning-table td small { display: block; }
+.programme-duration-input { display: flex; align-items: center; gap: 5px; }
+.programme-duration-input input { width: 56px; }
+.programme-duration-input span { color: #7a8292; font-size: 10px; }
+.planned-start-input { width: 54px; padding: 7px 5px; border: 1px solid #d8dce6; border-radius: 5px; text-align: center; }
+.inactive-programme-row { opacity: .55; }
+
 .utilisation-grid {
   width: max-content;
   min-width: 100%;

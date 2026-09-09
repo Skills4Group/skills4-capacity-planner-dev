@@ -67,6 +67,56 @@ def test_maternity_leave_preserves_setting_but_removes_forecast_capacity() -> No
     assert request.existing_learners[0].tutor_id == "T1"
 
 
+def test_maternity_return_date_is_carried_into_monthly_forecast() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 9, 1),
+        months=3,
+        attendance_learners=[],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T1",
+                "Tutor One",
+                Workstream.PHARMACY,
+                50,
+                on_maternity_leave=True,
+                maternity_return_date=date(2026, 11, 1),
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+
+    assert request.tutors[0].capacity == 50
+    assert request.tutors[0].available_from == date(2026, 11, 1)
+
+
+def test_non_delivery_tutor_is_excluded_and_learners_remain_demand() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=1,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Non Delivery")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "T1",
+                "Non Delivery",
+                Workstream.PHARMACY,
+                50,
+                delivery_eligible=False,
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+    )
+
+    assert request.tutors == []
+    assert request.existing_learners == []
+    assert [row.learner_id for row in request.unallocated_existing_learners] == [
+        "L-T1"
+    ]
+
+
 def test_unconfigured_idle_tutor_is_not_assigned_to_an_invented_workstream() -> None:
     request = build_live_request(
         as_of_date=date(2026, 8, 11),
