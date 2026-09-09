@@ -686,6 +686,48 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   background: #fff;
 }
 
+.tutor-allocation-editor {
+  display: grid;
+  min-width: 355px;
+  gap: 6px;
+}
+
+.tutor-allocation-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) 64px 28px;
+  gap: 5px;
+}
+
+.tutor-allocation-row select,
+.tutor-allocation-row input {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #d7dbe5;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.tutor-allocation-row input { text-align: right; }
+
+.tutor-allocation-row button {
+  border: 1px solid #e4c9d0;
+  border-radius: 5px;
+  background: #fff7f8;
+  color: #b4233d;
+}
+
+.allocation-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+}
+
+.allocation-total.valid span { color: #18744b; }
+.allocation-total.invalid span { color: #b4233d; font-weight: 700; }
+.allocation-total button { border: 0; background: transparent; color: #7337e6; font-weight: 700; }
+
 .programme-planning-card {
   margin-top: 22px;
   padding: 22px;

@@ -267,7 +267,7 @@ function App() {
               <tbody>
                 {scenarioRows.map((row) => {
                   const status = statusFor(row)
-                  return <tr key={row.tutor_id}><td><strong>{row.tutor_name}</strong><small>{row.tutor_id}</small></td><td><span className="stream-pill" data-stream={row.workstream}>{row.workstream}</span></td><td>{row.peak_caseload}</td><td className="positive">+{row.forecast_starts}</td><td className="muted">−{row.offboarded}</td><td>{row.capacity}</td><td><strong className={row.remaining_capacity < 0 ? 'negative' : ''}>{row.remaining_capacity}</strong></td><td><span className={`status-pill ${status.tone}`}>{status.label}</span></td></tr>
+                  return <tr key={`${row.tutor_id}:${row.workstream}`}><td><strong>{row.tutor_name}</strong><small>{row.tutor_id}</small></td><td><span className="stream-pill" data-stream={row.workstream}>{row.workstream}</span></td><td>{row.peak_caseload}</td><td className="positive">+{row.forecast_starts}</td><td className="muted">−{row.offboarded}</td><td>{row.capacity}</td><td><strong className={row.remaining_capacity < 0 ? 'negative' : ''}>{row.remaining_capacity}</strong></td><td><span className={`status-pill ${status.tone}`}>{status.label}</span></td></tr>
                 })}
               </tbody>
             </table>

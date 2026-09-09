@@ -6,7 +6,13 @@ from math import ceil, sqrt
 from statistics import median
 
 from .adapters.attendance import AttendanceLearnerRecord
-from .forecast import add_months, month_end, month_start, tutor_capacity_on
+from .forecast import (
+    add_months,
+    month_end,
+    month_start,
+    tutor_stream_capacities_on,
+    tutor_stream_capacity_on,
+)
 from .live_forecast import map_programme
 from .models import (
     CAPACITY_CONSUMING_STATUSES,
@@ -181,13 +187,20 @@ def build_predictive_forecast(
         tutor.tutor_id: tutor
         for tutor in forecast_request.tutors
         if tutor.workstream in REPORTING_WORKSTREAMS
+        or any(
+            allocation.workstream in REPORTING_WORKSTREAMS
+            for allocation in tutor.programme_allocations
+        )
     }
     tutor_workstreams = {
         tutor_id: tutor.workstream for tutor_id, tutor in tutors.items()
     }
     capacities = Counter[Workstream]()
     for tutor in tutors.values():
-        capacities[tutor.workstream] += tutor_capacity_on(tutor, as_of_date)
+        for workstream, capacity in tutor_stream_capacities_on(
+            tutor, as_of_date
+        ).items():
+            capacities[workstream] += capacity
 
     history_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
     earliest_history: dict[Workstream, date] = {}
@@ -311,9 +324,8 @@ def build_predictive_forecast(
                 active[key] = existing_active + cohort_total
 
             capacity = sum(
-                tutor_capacity_on(tutor, month)
+                tutor_stream_capacity_on(tutor, workstream, month)
                 for tutor in tutors.values()
-                if tutor.workstream == workstream
             )
             stream_rows.append(
                 PredictiveWorkstreamMonth(

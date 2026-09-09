@@ -95,6 +95,7 @@ def build_tutor_admin_records(
                 on_maternity_leave=on_maternity_leave,
                 maternity_return_date=maternity_return_date,
                 delivery_eligible=delivery_eligible,
+                programme_allocations=list(setting.programme_allocations) if setting else [],
                 current_caseload=current_caseload,
                 remaining_capacity=(
                     effective_capacity - current_caseload

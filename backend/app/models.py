@@ -18,6 +18,13 @@ REPORTING_WORKSTREAMS = tuple(
 )
 
 
+class TutorCapacityAllocation(BaseModel):
+    programme_code: str
+    programme_name: str
+    workstream: Workstream
+    capacity: int = Field(ge=0, le=250)
+
+
 class LearnerStatus(StrEnum):
     IN_PROGRESS = "In Progress"
     COMPLETED = "Completed"
@@ -49,6 +56,7 @@ class Tutor(BaseModel):
     workstream: Workstream
     capacity: int = Field(default=50, ge=0, le=250)
     available_from: date | None = None
+    programme_allocations: list[TutorCapacityAllocation] = Field(default_factory=list)
 
 
 class ExistingLearner(BaseModel):
@@ -58,6 +66,7 @@ class ExistingLearner(BaseModel):
     start_date: date
     expected_end_date: date
     status: LearnerStatus
+    workstream: Workstream | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "ExistingLearner":
@@ -215,6 +224,7 @@ class TutorAdminRecord(BaseModel):
     on_maternity_leave: bool
     maternity_return_date: date | None = None
     delivery_eligible: bool = True
+    programme_allocations: list[TutorCapacityAllocation] = Field(default_factory=list)
     current_caseload: int
     remaining_capacity: int
     has_saved_setting: bool
@@ -233,6 +243,7 @@ class TutorListResponse(BaseModel):
     as_of_date: date
     tutors: list[TutorAdminRecord]
     new_tutor_count: int = 0
+    programmes: list["ProgrammePlanningRecord"] = Field(default_factory=list)
 
 
 class TutorDiscoveryItem(BaseModel):
@@ -259,11 +270,22 @@ class TutorUpdateRequest(BaseModel):
     on_maternity_leave: bool = False
     maternity_return_date: date | None = None
     delivery_eligible: bool = True
+    programme_allocations: list[TutorCapacityAllocation] | None = None
 
     @model_validator(mode="after")
     def validate_maternity_return(self) -> "TutorUpdateRequest":
         if not self.on_maternity_leave and self.maternity_return_date is not None:
             raise ValueError("maternity_return_date requires on_maternity_leave")
+        if self.programme_allocations is not None:
+            codes = [row.programme_code for row in self.programme_allocations]
+            if len(codes) != len(set(codes)):
+                raise ValueError("programme allocations must be unique")
+            if self.programme_allocations and sum(
+                row.capacity for row in self.programme_allocations
+            ) != self.capacity:
+                raise ValueError(
+                    "programme allocations must total the tutor's maximum capacity"
+                )
         return self
 
 
@@ -274,6 +296,7 @@ class TutorUpdateResponse(BaseModel):
     on_maternity_leave: bool
     maternity_return_date: date | None = None
     delivery_eligible: bool = True
+    programme_allocations: list[TutorCapacityAllocation] = Field(default_factory=list)
     updated_by: str
     effective_from: date
 

@@ -51,7 +51,7 @@ export function UtilisationView({
   const rowByTutorAndMonth = useMemo(
     () =>
       new Map(
-        forecast.tutor_months.map((row) => [`${row.tutor_id}:${row.month}`, row]),
+        forecast.tutor_months.map((row) => [`${row.tutor_id}:${row.workstream}:${row.month}`, row]),
       ),
     [forecast.tutor_months],
   )
@@ -145,13 +145,13 @@ export function UtilisationView({
             </thead>
             <tbody>
               {tutors.map((tutor) => (
-                <tr key={tutor.tutor_id}>
+                <tr key={`${tutor.tutor_id}:${tutor.workstream}`}>
                   <td className="sticky-tutor"><strong>{tutor.tutor_name}</strong><small>{tutor.tutor_id}</small></td>
                   <td className="sticky-workstream"><span className="utilisation-subject">{tutor.workstream}</span></td>
                   <td className="numeric">{tutor.capacity}</td>
                   <td className="numeric">{tutor.opening_caseload}</td>
                   {months.map((month) => {
-                    const row = rowByTutorAndMonth.get(`${tutor.tutor_id}:${month}`)
+                    const row = rowByTutorAndMonth.get(`${tutor.tutor_id}:${tutor.workstream}:${month}`)
                     const caseload = row?.peak_caseload ?? 0
                     const gap = caseload - (row?.capacity ?? tutor.capacity)
                     const gapTone = gap > 0 ? 'shortage' : gap < 0 ? 'spare' : 'balanced'

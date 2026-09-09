@@ -115,6 +115,7 @@ export interface TutorAdminRecord {
   on_maternity_leave: boolean
   maternity_return_date: string | null
   delivery_eligible: boolean
+  programme_allocations: TutorCapacityAllocation[]
   current_caseload: number
   remaining_capacity: number
   has_saved_setting: boolean
@@ -133,6 +134,14 @@ export interface TutorListResponse {
   as_of_date: string
   tutors: TutorAdminRecord[]
   new_tutor_count: number
+  programmes: ProgrammePlanningRecord[]
+}
+
+export interface TutorCapacityAllocation {
+  programme_code: string
+  programme_name: string
+  workstream: Workstream
+  capacity: number
 }
 
 export interface TutorDiscoverySummary {

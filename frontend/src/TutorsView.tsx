@@ -3,6 +3,7 @@ import {
   reportingWorkstreams,
   workstreams,
   type SessionResponse,
+  type ProgrammePlanningRecord,
   type TutorAdminRecord,
   type TutorListResponse,
   type Workstream,
@@ -11,10 +12,28 @@ import { calculateTutorUtilisation } from './tutorUtilisation'
 
 interface TutorDraft {
   capacity: string
-  workstream: Workstream | ''
+  allocations: Array<{ programmeCode: string; capacity: string }>
   onMaternityLeave: boolean
   maternityReturnDate: string
   deliveryEligible: boolean
+}
+
+function initialAllocations(
+  tutor: TutorAdminRecord,
+  programmes: ProgrammePlanningRecord[],
+) {
+  if (tutor.programme_allocations.length) {
+    return tutor.programme_allocations.map((allocation) => ({
+      programmeCode: allocation.programme_code,
+      capacity: String(allocation.capacity),
+    }))
+  }
+  const generic = programmes.find((programme) => (
+    programme.active
+    && programme.workstream === tutor.workstream
+    && programme.programme_code.endsWith('-general')
+  )) ?? programmes.find((programme) => programme.active && programme.workstream === tutor.workstream)
+  return generic ? [{ programmeCode: generic.programme_code, capacity: String(tutor.capacity) }] : []
 }
 
 interface TutorsViewProps {
@@ -39,10 +58,12 @@ export function TutorsView({
   onDiscoveryCountChange,
 }: TutorsViewProps) {
   const [tutors, setTutors] = useState<TutorAdminRecord[]>([])
+  const [programmes, setProgrammes] = useState<ProgrammePlanningRecord[]>([])
   const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, display_name: null })
   const [drafts, setDrafts] = useState<Record<string, TutorDraft>>({})
   const [search, setSearch] = useState('')
   const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive' | 'Non-delivery'>('All')
+  const [programmeFilter, setProgrammeFilter] = useState('All')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -59,12 +80,13 @@ export function TutorsView({
       throw new Error('Tutor data contains an invalid or duplicate identifier')
     }
     setTutors(payload.tutors)
+    setProgrammes(payload.programmes)
     onDiscoveryCountChange(payload.new_tutor_count)
     setDrafts(Object.fromEntries(payload.tutors.map((tutor) => [
       tutor.tutor_id,
       {
         capacity: String(tutor.capacity),
-        workstream: tutor.workstream ?? '',
+        allocations: initialAllocations(tutor, payload.programmes),
         onMaternityLeave: tutor.on_maternity_leave,
         maternityReturnDate: tutor.maternity_return_date ?? '',
         deliveryEligible: tutor.delivery_eligible,
@@ -92,26 +114,32 @@ export function TutorsView({
       const matchesSearch = !query || tutor.tutor_name.toLowerCase().includes(query) || tutor.tutor_id.toLowerCase().includes(query)
       const matchesWorkstream = workstreamFilter === 'All'
         || (workstreamFilter === 'Unassigned'
-          ? tutor.workstream === null && tutor.is_active
+          ? tutor.programme_allocations.length === 0 && tutor.workstream === null && tutor.is_active
           : workstreamFilter === 'New'
             ? tutor.is_new
             : workstreamFilter === 'Inactive'
               ? !tutor.is_active
               : workstreamFilter === 'Non-delivery'
                 ? tutor.is_active && !tutor.delivery_eligible
-              : tutor.workstream === workstreamFilter)
-      return matchesSearch && matchesWorkstream
+              : tutor.programme_allocations.some((allocation) => allocation.workstream === workstreamFilter)
+                || (tutor.programme_allocations.length === 0 && tutor.workstream === workstreamFilter))
+      const matchesProgramme = programmeFilter === 'All'
+        || tutor.programme_allocations.some((allocation) => allocation.programme_code === programmeFilter)
+      return matchesSearch && matchesWorkstream && matchesProgramme
     })
-  }, [search, tutors, workstreamFilter])
+  }, [programmeFilter, search, tutors, workstreamFilter])
 
   const summary = useMemo(() => ({
-    active: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)).length,
+    active: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && (
+      tutor.programme_allocations.some((allocation) => reportingWorkstreams.includes(allocation.workstream))
+      || (tutor.programme_allocations.length === 0 && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream))
+    )).length,
     inactive: tutors.filter((tutor) => !tutor.is_active).length,
     nonDelivery: tutors.filter((tutor) => tutor.is_active && !tutor.delivery_eligible).length,
     configured: tutors.filter((tutor) => tutor.has_saved_setting).length,
     custom: tutors.filter((tutor) => tutor.is_active && tutor.capacity !== 50).length,
     maternity: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && tutor.on_maternity_leave && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)).length,
-    unassigned: tutors.filter((tutor) => tutor.is_active && tutor.workstream === null).length,
+    unassigned: tutors.filter((tutor) => tutor.is_active && tutor.programme_allocations.length === 0 && tutor.workstream === null).length,
     newTutors: tutors.filter((tutor) => tutor.is_new).length,
     places: tutors.reduce((sum, tutor) => (
       tutor.is_active && tutor.delivery_eligible && tutor.workstream !== null && reportingWorkstreams.includes(tutor.workstream)
@@ -128,10 +156,38 @@ export function TutorsView({
     }))
   }
 
+  function changeAllocation(tutorId: string, index: number, change: Partial<{ programmeCode: string; capacity: string }>) {
+    const allocations = [...(drafts[tutorId]?.allocations ?? [])]
+    allocations[index] = { ...allocations[index], ...change }
+    changeDraft(tutorId, { allocations })
+  }
+
+  function addAllocation(tutorId: string) {
+    const used = new Set(drafts[tutorId]?.allocations.map((row) => row.programmeCode) ?? [])
+    const programme = programmes.find((row) => row.active && !used.has(row.programme_code))
+    if (!programme) return
+    changeDraft(tutorId, {
+      allocations: [...(drafts[tutorId]?.allocations ?? []), { programmeCode: programme.programme_code, capacity: '0' }],
+    })
+  }
+
+  function removeAllocation(tutorId: string, index: number) {
+    changeDraft(tutorId, {
+      allocations: (drafts[tutorId]?.allocations ?? []).filter((_, rowIndex) => rowIndex !== index),
+    })
+  }
+
   async function saveTutor(tutor: TutorAdminRecord) {
     const draft = drafts[tutor.tutor_id]
     const capacity = Number(draft.capacity)
-    if (!session.is_admin || !draft.workstream || !Number.isInteger(capacity) || capacity < 0 || capacity > 250) return
+    const allocations = draft.allocations.map((row) => ({
+      programme: programmes.find((programme) => programme.programme_code === row.programmeCode),
+      capacity: Number(row.capacity),
+    }))
+    const allocationTotal = allocations.reduce((sum, row) => sum + row.capacity, 0)
+    const uniqueCodes = new Set(draft.allocations.map((row) => row.programmeCode))
+    if (!session.is_admin || !allocations.length || allocations.some((row) => !row.programme || !Number.isInteger(row.capacity) || row.capacity < 0) || uniqueCodes.size !== allocations.length || allocationTotal !== capacity || !Number.isInteger(capacity) || capacity < 0 || capacity > 250) return
+    const primaryWorkstream = allocations[0].programme!.workstream
     setSavingId(tutor.tutor_id)
     setError('')
     try {
@@ -140,12 +196,18 @@ export function TutorsView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           capacity,
-          workstream: draft.workstream,
+          workstream: primaryWorkstream,
           on_maternity_leave: draft.onMaternityLeave,
           maternity_return_date: draft.onMaternityLeave && draft.maternityReturnDate
             ? draft.maternityReturnDate
             : null,
           delivery_eligible: draft.deliveryEligible,
+          programme_allocations: allocations.map((row) => ({
+            programme_code: row.programme!.programme_code,
+            programme_name: row.programme!.display_name,
+            workstream: row.programme!.workstream,
+            capacity: row.capacity,
+          })),
         }),
       })
       if (!response.ok) {
@@ -241,7 +303,7 @@ export function TutorsView({
         <article><span>Configured</span><strong>{summary.configured}</strong><small>saved settings</small></article>
         <article><span>Custom capacity</span><strong>{summary.custom}</strong><small>not using 50</small></article>
         <article className={summary.maternity ? 'attention' : ''}><span>Maternity leave</span><strong>{summary.maternity}</strong><small>currently unavailable</small></article>
-        <article className={summary.unassigned ? 'attention' : ''}><span>Needs workstream</span><strong>{summary.unassigned}</strong><small>must be assigned</small></article>
+        <article className={summary.unassigned ? 'attention' : ''}><span>Needs allocation</span><strong>{summary.unassigned}</strong><small>must be assigned</small></article>
         <article><span>Total capacity</span><strong>{summary.places}</strong><small>learner places</small></article>
       </section>
 
@@ -254,6 +316,7 @@ export function TutorsView({
           </div>
           <div className="tutor-tools">
             <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option><option>Non-delivery</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
+            <label><span>Programme</span><select value={programmeFilter} onChange={(event) => setProgrammeFilter(event.target.value)}><option value="All">All programmes</option>{programmes.filter((programme) => programme.active && programme.workstream !== 'Operations').map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name}</option>)}</select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
           </div>
         </div>
@@ -263,7 +326,7 @@ export function TutorsView({
 
         <div className="tutor-admin-table-wrap">
           <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Workstream</th><th>Current learners</th><th>Maximum capacity</th><th>Delivery role</th><th>Maternity leave</th><th>Return month</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
+            <thead><tr><th>Tutor</th><th>Teaching allocations</th><th>Current learners</th><th>Maximum capacity</th><th>Delivery role</th><th>Maternity leave</th><th>Return month</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan={12} className="empty-row">Loading tutors…</td></tr>
@@ -272,15 +335,24 @@ export function TutorsView({
               ) : visibleTutors.map((tutor) => {
                 const draft = drafts[tutor.tutor_id] ?? {
                   capacity: String(tutor.capacity),
-                  workstream: tutor.workstream ?? '',
+                  allocations: initialAllocations(tutor, programmes),
                   onMaternityLeave: tutor.on_maternity_leave,
                   maternityReturnDate: tutor.maternity_return_date ?? '',
                   deliveryEligible: tutor.delivery_eligible,
                 }
                 const draftCapacity = Number(draft.capacity)
                 const validCapacity = Number.isInteger(draftCapacity) && draftCapacity >= 0 && draftCapacity <= 250
+                const savedAllocations = tutor.programme_allocations.length
+                  ? tutor.programme_allocations.map((row) => `${row.programme_code}:${row.capacity}`).sort().join('|')
+                  : initialAllocations(tutor, programmes).map((row) => `${row.programmeCode}:${row.capacity}`).sort().join('|')
+                const draftAllocations = draft.allocations.map((row) => `${row.programmeCode}:${Number(row.capacity)}`).sort().join('|')
+                const allocationTotal = draft.allocations.reduce((sum, row) => sum + Number(row.capacity || 0), 0)
+                const validAllocations = draft.allocations.length > 0
+                  && draft.allocations.every((row) => row.programmeCode && Number.isInteger(Number(row.capacity)) && Number(row.capacity) >= 0)
+                  && new Set(draft.allocations.map((row) => row.programmeCode)).size === draft.allocations.length
+                  && allocationTotal === draftCapacity
                 const dirty = draftCapacity !== tutor.capacity
-                  || draft.workstream !== (tutor.workstream ?? '')
+                  || draftAllocations !== savedAllocations
                   || draft.onMaternityLeave !== tutor.on_maternity_leave
                   || draft.maternityReturnDate !== (tutor.maternity_return_date ?? '')
                   || draft.deliveryEligible !== tutor.delivery_eligible
@@ -294,9 +366,9 @@ export function TutorsView({
                   onMaternityLeave: onLeaveNow,
                 })
                 return (
-                  <tr key={tutor.tutor_id} className={`${tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
+                  <tr key={tutor.tutor_id} className={`${draft.allocations.length === 0 && tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
                     <td><strong>{tutor.tutor_name}{tutor.is_new && <span className="new-tutor-pill">New</span>}</strong><small>{tutor.tutor_id}</small>{tutor.first_seen_at && <small>First seen {discoveredFormatter.format(new Date(tutor.first_seen_at))}</small>}</td>
-                    <td><select aria-label={`${tutor.tutor_name} workstream`} value={draft.workstream} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { workstream: event.target.value as Workstream | '' })}><option value="">Select workstream</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></td>
+                    <td><div className="tutor-allocation-editor">{draft.allocations.map((allocation, index) => <div className="tutor-allocation-row" key={`${index}:${allocation.programmeCode}`}><select aria-label={`${tutor.tutor_name} allocation ${index + 1} programme`} value={allocation.programmeCode} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { programmeCode: event.target.value })}><option value="">Select programme</option>{programmes.filter((programme) => programme.active).map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name} — {programme.workstream}</option>)}</select><input aria-label={`${tutor.tutor_name} allocation ${index + 1} capacity`} type="number" min="0" max="250" value={allocation.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { capacity: event.target.value })} /><button type="button" aria-label={`Remove allocation ${index + 1} for ${tutor.tutor_name}`} disabled={!session.is_admin || !tutor.is_active || draft.allocations.length === 1} onClick={() => removeAllocation(tutor.tutor_id, index)}>×</button></div>)}<div className={`allocation-total ${validAllocations ? 'valid' : 'invalid'}`}><span>{allocationTotal} of {draftCapacity || 0} places allocated</span><button type="button" disabled={!session.is_admin || !tutor.is_active || draft.allocations.length >= programmes.filter((programme) => programme.active).length} onClick={() => addAllocation(tutor.tutor_id)}>+ Add programme</button></div></div></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
                     <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>
                     <td><label className="maternity-toggle"><input aria-label={`${tutor.tutor_name} delivery tutor`} type="checkbox" checked={draft.deliveryEligible} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { deliveryEligible: event.target.checked })} /><span>{draft.deliveryEligible ? 'Delivery' : 'Non-delivery'}</span></label></td>
@@ -306,7 +378,7 @@ export function TutorsView({
                     <td>{tutor.is_active ? <strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong> : <span className="excluded-capacity">Excluded</span>}</td>
                     <td><span className={`tutor-utilisation-pill ${utilisation.tone}`} title={utilisation.percent === null ? utilisation.label : `${tutor.current_caseload} of ${draftCapacity} learner places`}>{utilisation.label}</span></td>
                     <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.is_new && <small className="review-required">Review required</small>}{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
-                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !draft.workstream || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
+                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !validAllocations || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
                   </tr>
                 )
               })}

@@ -268,6 +268,9 @@ def list_tutors() -> TutorListResponse:
             tutor_settings, mappings, tutor_statuses = fetch_tutor_configuration(
                 capacity, as_of_date
             )
+            programmes, _ = fetch_programme_planning(
+                capacity, academic_year_for(as_of_date)
+            )
             discoveries = sync_tutor_discovery(
                 capacity, build_tutor_identity_map(tutors).tutors
             )
@@ -283,6 +286,7 @@ def list_tutors() -> TutorListResponse:
                 tutor_statuses=tutor_statuses,
             ),
             new_tutor_count=sum(discovery.is_new for discovery in discoveries),
+            programmes=programmes,
         )
     except Exception:
         logger.exception("Tutor directory loading failed")
@@ -381,6 +385,7 @@ def update_tutor_capacity(
                 on_maternity_leave=update.on_maternity_leave,
                 maternity_return_date=update.maternity_return_date,
                 delivery_eligible=update.delivery_eligible,
+                programme_allocations=update.programme_allocations,
                 effective_from=as_of_date,
                 updated_by=actor,
             )
@@ -391,6 +396,7 @@ def update_tutor_capacity(
             on_maternity_leave=update.on_maternity_leave,
             maternity_return_date=update.maternity_return_date,
             delivery_eligible=update.delivery_eligible,
+            programme_allocations=update.programme_allocations or [],
             updated_by=actor,
             effective_from=as_of_date,
         )

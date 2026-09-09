@@ -249,6 +249,16 @@ The Attendance Tool is always treated as a read-only source. Capacity Tracker mi
 
 ## Tutor administration
 
+Tutor capacity can be divided across multiple programme allocations. The allocation
+total must equal the tutor's maximum capacity, which prevents the same learner places
+from being counted more than once. Pharmacy L2, Pharmacy L3, Technical Services, and
+general programme buckets for the other workstreams are separate choices. A tutor
+with 50 places can therefore hold, for example, 20 Pharmacy L2 places and 30 Pharmacy
+L3 places, or split those places across programmes belonging to different
+workstreams. Forecast and utilisation calculations aggregate each allocation only
+into its programme's parent workstream; multi-workstream tutors appear once in each
+relevant workstream with the allocated share of capacity.
+
 The Tutors tab reads the active tutor directory from Attendance and stores all
 capacity, workstream, and maternity-leave changes in the Capacity-owned
 `capacity.tutor_setting` table. Changes are effective-dated and record the

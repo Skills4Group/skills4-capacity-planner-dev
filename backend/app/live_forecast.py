@@ -113,6 +113,7 @@ def build_live_request(
                         if setting.on_maternity_leave
                         else None
                     ),
+                    programme_allocations=list(setting.programme_allocations),
                 )
             )
         elif tutor_id in inferred:
@@ -149,6 +150,7 @@ def build_live_request(
                         if setting.on_maternity_leave
                         else None
                     ),
+                    programme_allocations=list(setting.programme_allocations),
                 )
             )
 
@@ -173,6 +175,10 @@ def build_live_request(
                     start_date=record.start_date,
                     expected_end_date=record.expected_end_date,
                     status=valid_statuses[record.status_desc],
+                    workstream=(
+                        map_programme(record.programme_name, programme_mappings)
+                        or inferred.get(record.tutor_id)
+                    ),
                 )
             )
             continue

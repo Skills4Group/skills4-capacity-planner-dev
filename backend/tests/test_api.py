@@ -64,6 +64,25 @@ def test_zero_capacity_and_maternity_flag_pass_request_validation() -> None:
     assert response.status_code == 503
 
 
+def test_programme_allocations_must_total_capacity() -> None:
+    response = client.put(
+        "/api/v1/tutors/T1/capacity",
+        json={
+            "capacity": 50,
+            "workstream": "Pharmacy",
+            "programme_allocations": [
+                {
+                    "programme_code": "pharmacy-l2",
+                    "programme_name": "Pharmacy L2",
+                    "workstream": "Pharmacy",
+                    "capacity": 20,
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_tutor_acknowledgement_is_disabled_without_platform_authentication() -> None:
     response = client.put(
         "/api/v1/tutors/T1/acknowledge",

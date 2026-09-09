@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from .attendance import AttendanceTutorRecord
-from ..models import PipelineLearner, Workstream
+from ..models import PipelineLearner, TutorCapacityAllocation, Workstream
 
 
 TUTOR_SETTINGS_QUERY = """
@@ -64,6 +64,23 @@ WHERE expected_end_date >= %(as_of_date)s
 ORDER BY expected_start_date, source_system, source_learner_id
 """
 
+TUTOR_PROGRAMME_ASSIGNMENTS_QUERY = """
+SELECT DISTINCT ON (tpa.attendance_tutor_id, tpa.programme_code)
+    tpa.attendance_tutor_id,
+    tpa.tutor_name,
+    p.programme_code,
+    p.display_name,
+    w.display_name,
+    tpa.allocated_capacity
+FROM capacity.tutor_programme_assignment tpa
+JOIN capacity.programme p USING (programme_code)
+JOIN capacity.workstream w ON w.workstream_code = p.workstream_code
+WHERE tpa.effective_from <= %(as_of_date)s
+  AND (tpa.effective_to IS NULL OR tpa.effective_to >= %(as_of_date)s)
+ORDER BY tpa.attendance_tutor_id, tpa.programme_code,
+         tpa.effective_from DESC, tpa.updated_at DESC
+"""
+
 
 @dataclass(frozen=True)
 class TutorSettingRecord:
@@ -77,6 +94,7 @@ class TutorSettingRecord:
     on_maternity_leave: bool = False
     maternity_return_date: date | None = None
     delivery_eligible: bool = True
+    programme_allocations: tuple[TutorCapacityAllocation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -256,6 +274,35 @@ def fetch_tutor_configuration(
                 )
                 for row in cursor.fetchall()
             ]
+            cursor.execute(TUTOR_PROGRAMME_ASSIGNMENTS_QUERY, params)
+            allocations_by_tutor: dict[str, list[TutorCapacityAllocation]] = {}
+            for row in cursor.fetchall():
+                allocations_by_tutor.setdefault(row[0], []).append(
+                    TutorCapacityAllocation(
+                        programme_code=row[2],
+                        programme_name=row[3],
+                        workstream=Workstream(row[4]),
+                        capacity=row[5],
+                    )
+                )
+            settings = [
+                TutorSettingRecord(
+                    tutor_id=setting.tutor_id,
+                    tutor_name=setting.tutor_name,
+                    workstream=setting.workstream,
+                    capacity=setting.capacity,
+                    effective_from=setting.effective_from,
+                    updated_at=setting.updated_at,
+                    updated_by=setting.updated_by,
+                    on_maternity_leave=setting.on_maternity_leave,
+                    maternity_return_date=setting.maternity_return_date,
+                    delivery_eligible=setting.delivery_eligible,
+                    programme_allocations=tuple(
+                        allocations_by_tutor.get(setting.tutor_id, [])
+                    ),
+                )
+                for setting in settings
+            ]
             cursor.execute(PROGRAMME_MAPPINGS_QUERY, params)
             mappings = {
                 programme_name: Workstream(workstream)
@@ -276,6 +323,7 @@ def save_tutor_setting(
     on_maternity_leave: bool,
     maternity_return_date: date | None,
     delivery_eligible: bool,
+    programme_allocations: list[TutorCapacityAllocation] | None,
     effective_from: date,
     updated_by: str,
 ) -> None:
@@ -303,6 +351,58 @@ def save_tutor_setting(
                     "effective_from": effective_from,
                 },
             )
+            if programme_allocations is not None:
+                cursor.execute(
+                    """
+                    UPDATE capacity.tutor_programme_assignment
+                    SET effective_to = %(previous_day)s,
+                        updated_at = now(),
+                        updated_by = %(updated_by)s
+                    WHERE attendance_tutor_id = %(tutor_id)s
+                      AND effective_from < %(effective_from)s
+                      AND (effective_to IS NULL OR effective_to >= %(effective_from)s)
+                    """,
+                    {
+                        "previous_day": previous_day,
+                        "updated_by": updated_by,
+                        "tutor_id": tutor_id,
+                        "effective_from": effective_from,
+                    },
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM capacity.tutor_programme_assignment
+                    WHERE attendance_tutor_id = %(tutor_id)s
+                      AND effective_from = %(effective_from)s
+                    """,
+                    {"tutor_id": tutor_id, "effective_from": effective_from},
+                )
+                for allocation in programme_allocations:
+                    cursor.execute(
+                        """
+                        INSERT INTO capacity.tutor_programme_assignment (
+                            attendance_tutor_id, tutor_name, programme_code,
+                            allocated_capacity, effective_from, updated_at, updated_by
+                        )
+                        SELECT %(tutor_id)s, %(tutor_name)s, p.programme_code,
+                               %(allocated_capacity)s, %(effective_from)s, now(), %(updated_by)s
+                        FROM capacity.programme p
+                        WHERE p.programme_code = %(programme_code)s
+                          AND p.active IS TRUE
+                        """,
+                        {
+                            "tutor_id": tutor_id,
+                            "tutor_name": tutor_name,
+                            "programme_code": allocation.programme_code,
+                            "allocated_capacity": allocation.capacity,
+                            "effective_from": effective_from,
+                            "updated_by": updated_by,
+                        },
+                    )
+                    if cursor.rowcount != 1:
+                        raise ValueError(
+                            f"Unknown or inactive programme: {allocation.programme_code}"
+                        )
             cursor.execute(
                 """
                 UPDATE capacity.tutor_discovery

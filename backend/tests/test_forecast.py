@@ -7,6 +7,7 @@ from app.models import (
     LearnerStatus,
     PipelineLearner,
     Tutor,
+    TutorCapacityAllocation,
     Workstream,
 )
 
@@ -57,6 +58,57 @@ def test_pipeline_is_allocated_only_within_its_workstream() -> None:
     pharmacy = next(row for row in result.tutor_months if row.tutor_id == "P1")
     assert dental.forecast_starts == 0
     assert pharmacy.forecast_starts == 1
+
+
+def test_tutor_capacity_can_be_split_across_programmes_and_workstreams() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 9, 1),
+        months=1,
+        tutors=[
+            Tutor(
+                tutor_id="T1",
+                tutor_name="Cross-stream Tutor",
+                workstream=Workstream.PHARMACY,
+                capacity=50,
+                programme_allocations=[
+                    TutorCapacityAllocation(
+                        programme_code="pharmacy-l3",
+                        programme_name="Pharmacy L3",
+                        workstream=Workstream.PHARMACY,
+                        capacity=30,
+                    ),
+                    TutorCapacityAllocation(
+                        programme_code="dental-general",
+                        programme_name="Dental (general)",
+                        workstream=Workstream.DENTAL,
+                        capacity=20,
+                    ),
+                ],
+            )
+        ],
+        existing_learners=[],
+        pipeline_learners=[],
+    )
+
+    result = build_forecast(request)
+    rows = {
+        row.workstream: row
+        for row in result.tutor_months
+        if row.tutor_id == "T1"
+    }
+
+    assert rows[Workstream.PHARMACY].capacity == 30
+    assert rows[Workstream.DENTAL].capacity == 20
+    pharmacy = next(
+        row for row in result.workstream_months
+        if row.workstream == Workstream.PHARMACY
+    )
+    dental = next(
+        row for row in result.workstream_months
+        if row.workstream == Workstream.DENTAL
+    )
+    assert pharmacy.total_capacity == 30
+    assert dental.total_capacity == 20
 
 
 def test_zero_capacity_tutor_is_unavailable_without_division_error() -> None:
