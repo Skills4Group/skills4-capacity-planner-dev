@@ -6,6 +6,16 @@ from typing import Any
 from .models import PlannedCohortRecord, ProgrammePlanningRecord, Workstream
 
 
+def planned_cohort_from_row(row: tuple[Any, ...]) -> PlannedCohortRecord:
+    return PlannedCohortRecord(
+        programme_code=row[0],
+        start_month=row[1],
+        academic_year=row[2],
+        planned_starts=row[3],
+        notes=row[4],
+    )
+
+
 def academic_year_for(value: date) -> str:
     start_year = value.year if value.month >= 9 else value.year - 1
     return f"{start_year}/{str(start_year + 1)[-2:]}"
@@ -61,7 +71,7 @@ def fetch_programme_planning(
                 """,
                 {"start_month": start_month, "end_month": end_month},
             )
-            cohorts = [PlannedCohortRecord(*row) for row in cursor.fetchall()]
+            cohorts = [planned_cohort_from_row(row) for row in cursor.fetchall()]
     return programmes, cohorts
 
 
@@ -150,4 +160,4 @@ def save_planned_cohort(
                 },
             )
             row = cursor.fetchone()
-    return PlannedCohortRecord(*row) if row else None
+    return planned_cohort_from_row(row) if row else None
