@@ -159,6 +159,15 @@ export interface SessionResponse {
   is_admin: boolean
   object_id: string | null
   display_name: string | null
+  email: string | null
+}
+
+export interface AppUserRecord {
+  object_id: string
+  display_name: string
+  email: string | null
+  first_seen_at: string
+  last_seen_at: string
 }
 
 export interface AdminUserRecord {
@@ -176,6 +185,7 @@ export interface AdminUserRecord {
 export interface AdminUserListResponse {
   current_object_id: string
   admins: AdminUserRecord[]
+  registered_users: AppUserRecord[]
 }
 
 export interface ProgrammePlanningRecord {

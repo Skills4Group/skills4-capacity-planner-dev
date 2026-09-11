@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import Collection
 from dataclasses import dataclass
+import json
 
 from fastapi import HTTPException, Request, status
 
@@ -14,6 +16,38 @@ class AppUser:
     is_admin: bool
     object_id: str | None = None
     display_name: str | None = None
+    email: str | None = None
+
+
+def _principal_claims(request: Request) -> dict[str, str]:
+    encoded = request.headers.get("x-ms-client-principal")
+    if not encoded:
+        return {}
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        principal = json.loads(base64.b64decode(padded).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    claims = principal.get("claims") or principal.get("user_claims") or []
+    return {
+        str(claim.get("typ", "")).lower(): str(claim.get("val", ""))
+        for claim in claims
+        if claim.get("typ") and claim.get("val")
+    }
+
+
+def _claim(claims: dict[str, str], *names: str) -> str | None:
+    for name in names:
+        direct = claims.get(name.lower())
+        if direct:
+            return direct
+        suffix = next(
+            (value for key, value in claims.items() if key.endswith(f"/{name.lower()}")),
+            None,
+        )
+        if suffix:
+            return suffix
+    return None
 
 
 def resolve_user(
@@ -24,9 +58,20 @@ def resolve_user(
     if not settings.auth_enabled:
         return AppUser(authenticated=False, is_admin=False)
     object_id = request.headers.get("x-ms-client-principal-id")
-    display_name = request.headers.get("x-ms-client-principal-name")
+    principal_name = request.headers.get("x-ms-client-principal-name")
     if not object_id:
         return AppUser(authenticated=False, is_admin=False)
+    claims = _principal_claims(request)
+    email = _claim(
+        claims,
+        "preferred_username",
+        "emailaddress",
+        "email",
+        "upn",
+    )
+    if not email and principal_name and "@" in principal_name:
+        email = principal_name
+    display_name = _claim(claims, "name") or principal_name or email
     return AppUser(
         authenticated=True,
         is_admin=(
@@ -35,6 +80,7 @@ def resolve_user(
         ),
         object_id=object_id,
         display_name=display_name,
+        email=email.lower() if email else None,
     )
 
 

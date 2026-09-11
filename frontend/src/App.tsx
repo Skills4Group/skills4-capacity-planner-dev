@@ -85,6 +85,10 @@ function App() {
   }, [refreshForecast])
 
   useEffect(() => {
+    void fetch('/api/v1/session', { cache: 'no-store' }).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
     void refreshTutorDiscovery().catch(() => undefined)
     const timer = window.setInterval(() => {
       void refreshTutorDiscovery().catch(() => undefined)

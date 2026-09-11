@@ -215,6 +215,15 @@ class SessionResponse(BaseModel):
     is_admin: bool
     object_id: str | None = None
     display_name: str | None = None
+    email: str | None = None
+
+
+class AppUserRecord(BaseModel):
+    object_id: str
+    display_name: str
+    email: str | None = None
+    first_seen_at: datetime
+    last_seen_at: datetime
 
 
 class AdminUserRecord(BaseModel):
@@ -232,12 +241,11 @@ class AdminUserRecord(BaseModel):
 class AdminUserListResponse(BaseModel):
     current_object_id: str
     admins: list[AdminUserRecord]
+    registered_users: list[AppUserRecord]
 
 
 class AdminUserCreateRequest(BaseModel):
     object_id: str
-    display_name: str = Field(min_length=1, max_length=200)
-    email: str | None = Field(default=None, max_length=320)
 
     @field_validator("object_id")
     @classmethod
@@ -246,22 +254,6 @@ class AdminUserCreateRequest(BaseModel):
             return str(UUID(value.strip()))
         except (AttributeError, ValueError):
             raise ValueError("object_id must be a Microsoft Entra Object ID") from None
-
-    @field_validator("display_name", mode="before")
-    @classmethod
-    def trim_display_name(cls, value: str) -> str:
-        return value.strip()
-
-    @field_validator("email", mode="before")
-    @classmethod
-    def normalise_email(cls, value: str | None) -> str | None:
-        if value is None or not value.strip():
-            return None
-        candidate = value.strip().lower()
-        if "@" not in candidate:
-            raise ValueError("email must be a valid email address")
-        return candidate
-
 
 class AdminUserDeleteResponse(BaseModel):
     object_id: str

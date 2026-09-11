@@ -59,7 +59,7 @@ export function TutorsView({
 }: TutorsViewProps) {
   const [tutors, setTutors] = useState<TutorAdminRecord[]>([])
   const [programmes, setProgrammes] = useState<ProgrammePlanningRecord[]>([])
-  const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, object_id: null, display_name: null })
+  const [session, setSession] = useState<SessionResponse>({ authenticated: false, is_admin: false, object_id: null, display_name: null, email: null })
   const [drafts, setDrafts] = useState<Record<string, TutorDraft>>({})
   const [search, setSearch] = useState('')
   const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive' | 'Non-delivery'>('All')

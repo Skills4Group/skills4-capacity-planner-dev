@@ -331,14 +331,19 @@ registration is `Skills4 Capacity Tracker Dev` (application ID
 but the API trusts identity headers only when `CAPACITY_AUTH_ENABLED=true` and
 permits writes only for authorised Microsoft Entra Object IDs. IDs in
 `CAPACITY_ADMIN_OBJECT_IDS` remain the bootstrap administrators. An existing
-administrator can open the Settings tab and add further users by entering their
-Microsoft Entra Object ID, name, and optional email address. These additional
-authorisations are stored in `capacity.admin_user`, take effect on the user's next
-request, and use the same Easy Auth sign-in; no application password or separate
-account is created. Database administrators can be removed in Settings, but a
-bootstrap administrator must be removed from the Azure app configuration. The app
-prevents administrators from removing their own access. Migration
-`backend/migrations/008_add_admin_users.sql` creates the Capacity-owned audit table.
+administrator can open the Settings tab and promote a user who has signed in to the
+app at least once. The first authenticated session automatically records the user's
+Entra Object ID, name, email, and first/last-seen timestamps in the Capacity-owned
+`capacity.app_user` directory. Object IDs remain internal, so administrators select
+people by name rather than looking them up in Azure. Additional authorisations are
+stored in `capacity.admin_user`, take effect on the user's next request, and use the
+same Easy Auth sign-in; no application password or separate account is created.
+Database administrators can be removed in Settings, but a bootstrap administrator
+must be removed from the Azure app configuration. The app prevents administrators
+from removing their own access. Migrations
+`backend/migrations/008_add_admin_users.sql` and
+`backend/migrations/009_add_app_user_directory.sql` create the Capacity-owned access
+and user-directory tables.
 The Easy Auth client credential is stored by Container Apps, is not part of this
 repository, and must be rotated before 11 August 2027.
 

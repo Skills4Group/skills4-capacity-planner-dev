@@ -1,10 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import type {
   AdminUserListResponse,
   SessionResponse,
 } from './types'
-
-const guidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 async function responseError(response: Response, fallback: string) {
   try {
@@ -31,14 +29,19 @@ function formatDate(value: string | null) {
 export function SettingsView() {
   const [session, setSession] = useState<SessionResponse | null>(null)
   const [directory, setDirectory] = useState<AdminUserListResponse | null>(null)
-  const [displayName, setDisplayName] = useState('')
-  const [email, setEmail] = useState('')
-  const [objectId, setObjectId] = useState('')
+  const [selectedUserId, setSelectedUserId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
+  const availableUsers = useMemo(() => {
+    const adminIds = new Set(directory?.admins.map((admin) => admin.object_id.toLowerCase()) ?? [])
+    return directory?.registered_users.filter(
+      (user) => !adminIds.has(user.object_id.toLowerCase()),
+    ) ?? []
+  }, [directory])
 
   const loadAdmins = useCallback(async () => {
     const response = await fetch('/api/v1/admin-users', { cache: 'no-store' })
@@ -69,7 +72,9 @@ export function SettingsView() {
 
   async function addAdministrator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!guidPattern.test(objectId.trim()) || !displayName.trim()) return
+    if (!selectedUserId) return
+    const selectedUser = availableUsers.find((user) => user.object_id === selectedUserId)
+    if (!selectedUser) return
     setSaving(true)
     setError('')
     setMessage('')
@@ -77,18 +82,12 @@ export function SettingsView() {
       const response = await fetch('/api/v1/admin-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          object_id: objectId.trim(),
-          display_name: displayName.trim(),
-          email: email.trim() || null,
-        }),
+        body: JSON.stringify({ object_id: selectedUser.object_id }),
       })
       if (!response.ok) throw new Error(await responseError(response, 'Administrator could not be added'))
       await loadAdmins()
-      setDisplayName('')
-      setEmail('')
-      setObjectId('')
-      setMessage('Administrator added. Their existing Entra sign-in will now receive admin access.')
+      setSelectedUserId('')
+      setMessage(`${selectedUser.display_name} now has administrator access.`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Administrator could not be added')
     } finally {
@@ -133,8 +132,6 @@ export function SettingsView() {
     )
   }
 
-  const validObjectId = guidPattern.test(objectId.trim())
-
   return (
     <>
       <header className="topbar">
@@ -144,19 +141,17 @@ export function SettingsView() {
 
       <section className="settings-admin-grid">
         <article className="settings-form-card">
-          <div><p className="eyebrow">Add administrator</p><h2>Authorise an Entra user</h2><p>Add the user’s Entra Object ID. No password or separate Capacity Tracker account is created.</p></div>
+          <div><p className="eyebrow">Add administrator</p><h2>Promote a signed-in user</h2><p>Users appear here automatically after signing in to Capacity Tracker once. No Object ID lookup is required.</p></div>
           <form onSubmit={addAdministrator}>
-            <label><span>Name</span><input value={displayName} maxLength={200} onChange={(event) => setDisplayName(event.target.value)} placeholder="e.g. Alex Taylor" required /></label>
-            <label><span>Email address</span><input value={email} maxLength={320} onChange={(event) => setEmail(event.target.value)} placeholder="alex.taylor@skills4group.co.uk" type="email" /></label>
-            <label><span>Microsoft Entra Object ID</span><input className={objectId && !validObjectId ? 'invalid' : ''} value={objectId} onChange={(event) => setObjectId(event.target.value)} placeholder="00000000-0000-0000-0000-000000000000" required /><small>Azure portal → Microsoft Entra ID → Users → select the user → Object ID</small></label>
-            <button className="settings-primary-button" disabled={saving || !displayName.trim() || !validObjectId}>{saving ? 'Adding…' : 'Add administrator'}</button>
+            <label className="settings-user-select"><span>User</span><select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}><option value="">{availableUsers.length ? 'Select a signed-in user' : 'No users awaiting promotion'}</option>{availableUsers.map((user) => <option key={user.object_id} value={user.object_id}>{user.display_name}{user.email && user.email !== user.display_name ? ` — ${user.email}` : ''}</option>)}</select><small>If someone is missing, ask them to sign in to Capacity Tracker and refresh this page.</small></label>
+            <button className="settings-primary-button" disabled={saving || !selectedUserId}>{saving ? 'Adding…' : 'Make administrator'}</button>
           </form>
         </article>
 
         <article className="settings-security-card">
           <p className="eyebrow">Security model</p>
           <h2>Existing Entra sign-in</h2>
-          <ul><li>Access is matched using the immutable Entra Object ID.</li><li>Only an existing administrator can add or remove administrators.</li><li>Bootstrap administrators configured in Azure cannot be removed here.</li><li>All entries are stored in the Capacity database; Attendance remains read only.</li></ul>
+          <ul><li>A user is registered automatically on their first authenticated app session.</li><li>Only an existing administrator can promote or remove administrators.</li><li>The Entra Object ID is retained internally as the secure identity key.</li><li>All entries are stored in the Capacity database; Attendance remains read only.</li></ul>
         </article>
       </section>
 
@@ -167,8 +162,8 @@ export function SettingsView() {
         <div className="section-heading"><div><p className="eyebrow">Access directory</p><h2>Capacity administrators</h2><p>{directory?.admins.length ?? 0} authorised account{directory?.admins.length === 1 ? '' : 's'}</p></div></div>
         <div className="table-wrap">
           <table className="settings-admin-table">
-            <thead><tr><th>User</th><th>Entra Object ID</th><th>Access source</th><th>Added</th><th>Audit</th><th></th></tr></thead>
-            <tbody>{directory?.admins.map((admin) => { const isCurrent = admin.object_id.toLowerCase() === directory.current_object_id.toLowerCase(); return <tr key={admin.object_id}><td><strong>{admin.display_name}</strong><small>{admin.email ?? (isCurrent ? session.display_name : 'No email recorded')}</small>{isCurrent && <span className="current-admin-pill">Current user</span>}</td><td><code>{admin.object_id}</code></td><td><span className={`configuration-pill ${admin.source === 'configuration' ? 'saved' : 'inferred'}`}>{admin.source === 'configuration' ? 'Azure configuration' : 'Capacity database'}</span></td><td>{formatDate(admin.created_at)}</td><td><small>{admin.updated_by ? `Updated by ${admin.updated_by}` : 'Managed in Azure'}</small></td><td><button className="settings-remove-button" disabled={!admin.removable || isCurrent || removingId !== null} title={!admin.removable ? 'Remove this bootstrap administrator from the Azure app configuration' : isCurrent ? 'You cannot remove your own access' : undefined} onClick={() => removeAdministrator(admin.object_id, admin.display_name)}>{removingId === admin.object_id ? 'Removing…' : 'Remove'}</button></td></tr> })}</tbody>
+            <thead><tr><th>User</th><th>Access source</th><th>Added</th><th>Audit</th><th></th></tr></thead>
+            <tbody>{directory?.admins.map((admin) => { const isCurrent = admin.object_id.toLowerCase() === directory.current_object_id.toLowerCase(); return <tr key={admin.object_id}><td><strong>{admin.display_name}</strong><small>{admin.email ?? (isCurrent ? session.email ?? session.display_name : 'No email recorded')}</small>{isCurrent && <span className="current-admin-pill">Current user</span>}</td><td><span className={`configuration-pill ${admin.source === 'configuration' ? 'saved' : 'inferred'}`}>{admin.source === 'configuration' ? 'Azure configuration' : 'Capacity database'}</span></td><td>{formatDate(admin.created_at)}</td><td><small>{admin.updated_by ? `Updated by ${admin.updated_by}` : 'Managed in Azure'}</small></td><td><button className="settings-remove-button" disabled={!admin.removable || isCurrent || removingId !== null} title={!admin.removable ? 'Remove this bootstrap administrator from the Azure app configuration' : isCurrent ? 'You cannot remove your own access' : undefined} onClick={() => removeAdministrator(admin.object_id, admin.display_name)}>{removingId === admin.object_id ? 'Removing…' : 'Remove'}</button></td></tr> })}</tbody>
           </table>
         </div>
       </section>

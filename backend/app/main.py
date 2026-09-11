@@ -23,7 +23,10 @@ from .adapters.capacity import (
 from .admin_users import (
     configured_admin_record,
     fetch_admin_users,
+    fetch_app_user,
+    fetch_app_users,
     is_database_admin,
+    register_app_user,
     remove_admin_user,
     save_admin_user,
 )
@@ -110,11 +113,23 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/session", response_model=SessionResponse)
 def session(request: Request) -> SessionResponse:
     user = resolve_capacity_user(request)
+    if user.authenticated and user.object_id:
+        try:
+            with capacity_connection(settings) as capacity:
+                register_app_user(
+                    capacity,
+                    object_id=user.object_id,
+                    display_name=user.display_name or user.email or "Entra user",
+                    email=user.email,
+                )
+        except Exception:
+            logger.exception("Signed-in user registration failed")
     return SessionResponse(
         authenticated=user.authenticated,
         is_admin=user.is_admin,
         object_id=user.object_id,
         display_name=user.display_name,
+        email=user.email,
     )
 
 
@@ -124,6 +139,10 @@ def list_admin_users(request: Request) -> AdminUserListResponse:
     try:
         with capacity_connection(settings) as capacity:
             database_admins = fetch_admin_users(capacity)
+            registered_users = fetch_app_users(capacity)
+        registered_by_id = {
+            app_user.object_id.lower(): app_user for app_user in registered_users
+        }
         admins_by_id = {
             admin.object_id.lower(): admin for admin in database_admins
         }
@@ -139,12 +158,21 @@ def list_admin_users(request: Request) -> AdminUserListResponse:
                     current_object_id=user.object_id,
                     current_display_name=user.display_name,
                 )
+            registered = registered_by_id.get(key)
+            if registered:
+                admins_by_id[key] = admins_by_id[key].model_copy(
+                    update={
+                        "display_name": registered.display_name,
+                        "email": registered.email,
+                    }
+                )
         return AdminUserListResponse(
             current_object_id=user.object_id or "",
             admins=sorted(
                 admins_by_id.values(),
                 key=lambda admin: (admin.display_name.lower(), admin.object_id),
             ),
+            registered_users=registered_users,
         )
     except Exception:
         logger.exception("Administrator list load failed")
@@ -161,11 +189,17 @@ def add_admin_user(
     actor = user.display_name or user.object_id or "unknown-admin"
     try:
         with capacity_connection(settings) as capacity:
+            registered = fetch_app_user(capacity, update.object_id)
+            if registered is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="This user must sign in to Capacity Tracker before they can be made an administrator",
+                )
             saved = save_admin_user(
                 capacity,
                 object_id=update.object_id,
-                display_name=update.display_name,
-                email=update.email,
+                display_name=registered.display_name,
+                email=registered.email,
                 updated_by=actor,
             )
         if update.object_id.lower() in settings.admin_ids:
@@ -173,6 +207,8 @@ def add_admin_user(
                 update={"source": "configuration", "removable": False}
             )
         return saved
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Administrator save failed")
         raise HTTPException(
@@ -191,7 +227,6 @@ def delete_admin_user(
     try:
         normalised_id = AdminUserCreateRequest(
             object_id=object_id,
-            display_name="Validation",
         ).object_id
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None

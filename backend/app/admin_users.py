@@ -2,7 +2,88 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import AdminUserRecord
+from .models import AdminUserRecord, AppUserRecord
+
+
+def app_user_from_row(row: tuple[Any, ...]) -> AppUserRecord:
+    return AppUserRecord(
+        object_id=str(row[0]),
+        display_name=row[1],
+        email=row[2],
+        first_seen_at=row[3],
+        last_seen_at=row[4],
+    )
+
+
+def register_app_user(
+    connection: Any,
+    *,
+    object_id: str,
+    display_name: str,
+    email: str | None,
+) -> AppUserRecord:
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute(
+                """
+                INSERT INTO capacity.app_user (
+                    entra_object_id, display_name, email, first_seen_at, last_seen_at
+                )
+                VALUES (%(object_id)s::uuid, %(display_name)s, %(email)s, now(), now())
+                ON CONFLICT (entra_object_id)
+                DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    email = COALESCE(EXCLUDED.email, capacity.app_user.email),
+                    last_seen_at = now()
+                RETURNING entra_object_id, display_name, email,
+                          first_seen_at, last_seen_at
+                """,
+                {
+                    "object_id": object_id,
+                    "display_name": display_name,
+                    "email": email,
+                },
+            )
+            row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("Signed-in user could not be registered")
+    return app_user_from_row(row)
+
+
+def fetch_app_users(connection: Any) -> list[AppUserRecord]:
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute(
+                """
+                SELECT entra_object_id, display_name, email,
+                       first_seen_at, last_seen_at
+                FROM capacity.app_user
+                ORDER BY lower(display_name), entra_object_id
+                """
+            )
+            rows = cursor.fetchall()
+    return [app_user_from_row(row) for row in rows]
+
+
+def fetch_app_user(connection: Any, object_id: str) -> AppUserRecord | None:
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '10s'")
+            cursor.execute(
+                """
+                SELECT entra_object_id, display_name, email,
+                       first_seen_at, last_seen_at
+                FROM capacity.app_user
+                WHERE entra_object_id = %(object_id)s::uuid
+                """,
+                {"object_id": object_id},
+            )
+            row = cursor.fetchone()
+    return app_user_from_row(row) if row else None
 
 
 def admin_user_from_row(row: tuple[Any, ...]) -> AdminUserRecord:
@@ -46,11 +127,16 @@ def fetch_admin_users(connection: Any) -> list[AdminUserRecord]:
             cursor.execute("SET LOCAL statement_timeout = '30s'")
             cursor.execute(
                 """
-                SELECT entra_object_id, display_name, email, created_at, created_by,
-                       updated_at, updated_by
-                FROM capacity.admin_user
-                WHERE active IS TRUE
-                ORDER BY lower(display_name), entra_object_id
+                SELECT a.entra_object_id,
+                       COALESCE(u.display_name, a.display_name),
+                       COALESCE(u.email, a.email),
+                       a.created_at, a.created_by, a.updated_at, a.updated_by
+                FROM capacity.admin_user a
+                LEFT JOIN capacity.app_user u
+                  ON u.entra_object_id = a.entra_object_id
+                WHERE a.active IS TRUE
+                ORDER BY lower(COALESCE(u.display_name, a.display_name)),
+                         a.entra_object_id
                 """
             )
             rows = cursor.fetchall()

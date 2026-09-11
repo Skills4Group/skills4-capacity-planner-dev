@@ -1,3 +1,6 @@
+import base64
+import json
+
 from fastapi import HTTPException
 from starlette.requests import Request
 
@@ -68,3 +71,34 @@ def test_database_admin_ids_extend_the_configured_allowlist() -> None:
 
     assert user.authenticated and user.is_admin
     assert required.object_id == "DATABASE-ID"
+
+
+def test_entra_claims_supply_display_name_and_email() -> None:
+    principal = base64.b64encode(
+        json.dumps(
+            {
+                "claims": [
+                    {"typ": "name", "val": "Alex Taylor"},
+                    {
+                        "typ": "preferred_username",
+                        "val": "Alex.Taylor@Skills4Group.co.uk",
+                    },
+                ]
+            }
+        ).encode()
+    ).decode()
+    settings = Settings(auth_enabled=True)
+
+    user = resolve_user(
+        request_with_headers(
+            {
+                "x-ms-client-principal-id": "USER-ID",
+                "x-ms-client-principal-name": "fallback@skills4group.co.uk",
+                "x-ms-client-principal": principal,
+            }
+        ),
+        settings,
+    )
+
+    assert user.display_name == "Alex Taylor"
+    assert user.email == "alex.taylor@skills4group.co.uk"
