@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   reportingWorkstreams,
   workstreams,
@@ -70,6 +70,9 @@ export function TutorsView({
   const [savedId, setSavedId] = useState<string | null>(null)
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
 
   const loadTutors = useCallback(async () => {
     const response = await fetch('/api/v1/tutors')
@@ -128,6 +131,29 @@ export function TutorsView({
       return matchesSearch && matchesWorkstream && matchesProgramme
     })
   }, [programmeFilter, search, tutors, workstreamFilter])
+
+  useEffect(() => {
+    const top = topScrollRef.current
+    const grid = tableScrollRef.current
+    const table = tableRef.current
+    if (!top || !grid || !table) return
+    const spacer = top.firstElementChild as HTMLElement | null
+    const syncWidth = () => {
+      if (spacer) spacer.style.width = `${table.scrollWidth}px`
+    }
+    const topToGrid = () => { grid.scrollLeft = top.scrollLeft }
+    const gridToTop = () => { top.scrollLeft = grid.scrollLeft }
+    syncWidth()
+    const observer = new ResizeObserver(syncWidth)
+    observer.observe(table)
+    top.addEventListener('scroll', topToGrid)
+    grid.addEventListener('scroll', gridToTop)
+    return () => {
+      observer.disconnect()
+      top.removeEventListener('scroll', topToGrid)
+      grid.removeEventListener('scroll', gridToTop)
+    }
+  }, [visibleTutors])
 
   const summary = useMemo(() => ({
     active: tutors.filter((tutor) => tutor.is_active && tutor.delivery_eligible && (
@@ -324,9 +350,10 @@ export function TutorsView({
         {error && <div className="tutor-message error" role="alert">{error}</div>}
         {!session.is_admin && !loading && <div className="tutor-message">Capacity settings are read only until an authorised administrator signs in.</div>}
 
-        <div className="tutor-admin-table-wrap">
-          <table className="tutor-admin-table">
-            <thead><tr><th>Tutor</th><th>Teaching allocations</th><th>Current learners</th><th>Maximum capacity</th><th>Delivery role</th><th>Maternity leave</th><th>Return month</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th></th></tr></thead>
+        <div className="tutor-top-scroll" ref={topScrollRef} aria-label="Scroll tutor directory horizontally"><div /></div>
+        <div className="tutor-admin-table-wrap" ref={tableScrollRef}>
+          <table className="tutor-admin-table" ref={tableRef}>
+            <thead><tr><th>Tutor</th><th>Teaching allocations</th><th>Current learners</th><th>Maximum capacity</th><th>Delivery role</th><th>Maternity leave</th><th>Return month</th><th>Tutor status</th><th>Remaining</th><th>Utilisation</th><th>Configuration</th><th className="tutor-actions-column">Actions</th></tr></thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan={12} className="empty-row">Loading tutors…</td></tr>
@@ -378,7 +405,7 @@ export function TutorsView({
                     <td>{tutor.is_active ? <strong className={remaining < 0 ? 'negative' : ''}>{remaining}</strong> : <span className="excluded-capacity">Excluded</span>}</td>
                     <td><span className={`tutor-utilisation-pill ${utilisation.tone}`} title={utilisation.percent === null ? utilisation.label : `${tutor.current_caseload} of ${draftCapacity} learner places`}>{utilisation.label}</span></td>
                     <td><span className={`configuration-pill ${tutor.workstream_source}`}>{sourceLabel(tutor.workstream_source)}</span>{tutor.is_new && <small className="review-required">Review required</small>}{tutor.updated_by && <small>by {tutor.updated_by}</small>}</td>
-                    <td><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !validAllocations || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
+                    <td className="tutor-actions-column"><div className="tutor-row-actions"><button className="save-tutor-button" disabled={!session.is_admin || !tutor.is_active || !dirty || !validAllocations || !validCapacity || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => saveTutor(tutor)}>{savingId === tutor.tutor_id ? 'Saving…' : savedId === tutor.tutor_id ? 'Saved' : 'Save'}</button><button className={`tutor-status-button ${tutor.is_active ? 'deactivate' : 'reactivate'}`} disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => updateTutorStatus(tutor)}>{statusUpdatingId === tutor.tutor_id ? 'Updating…' : tutor.is_active ? 'Deactivate' : 'Reactivate'}</button>{tutor.is_new && <button className="acknowledge-tutor-button" disabled={!session.is_admin || savingId !== null || acknowledgingId !== null || statusUpdatingId !== null} onClick={() => acknowledgeTutor(tutor)}>{acknowledgingId === tutor.tutor_id ? 'Acknowledging…' : 'Acknowledge'}</button>}</div></td>
                   </tr>
                 )
               })}
