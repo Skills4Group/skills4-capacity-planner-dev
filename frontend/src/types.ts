@@ -157,7 +157,25 @@ export interface TutorDiscoverySummary {
 export interface SessionResponse {
   authenticated: boolean
   is_admin: boolean
+  object_id: string | null
   display_name: string | null
+}
+
+export interface AdminUserRecord {
+  object_id: string
+  display_name: string
+  email: string | null
+  source: 'configuration' | 'database'
+  created_at: string | null
+  created_by: string | null
+  updated_at: string | null
+  updated_by: string | null
+  removable: boolean
+}
+
+export interface AdminUserListResponse {
+  current_object_id: string
+  admins: AdminUserRecord[]
 }
 
 export interface ProgrammePlanningRecord {

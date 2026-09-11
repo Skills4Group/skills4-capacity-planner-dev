@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
@@ -19,10 +20,21 @@ from .adapters.capacity import (
     save_tutor_status,
     sync_tutor_discovery,
 )
-from .auth import require_admin, resolve_user
+from .admin_users import (
+    configured_admin_record,
+    fetch_admin_users,
+    is_database_admin,
+    remove_admin_user,
+    save_admin_user,
+)
+from .auth import AppUser, require_admin_user, resolve_user
 from .database import attendance_connection, capacity_connection
 from .live_forecast import build_live_request
 from .models import (
+    AdminUserCreateRequest,
+    AdminUserDeleteResponse,
+    AdminUserListResponse,
+    AdminUserRecord,
     ForecastRequest,
     ForecastResponse,
     PredictiveForecastResponse,
@@ -63,9 +75,31 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
+
+def resolve_capacity_user(request: Request) -> AppUser:
+    user = resolve_user(request, settings)
+    if (
+        not user.authenticated
+        or user.is_admin
+        or not user.object_id
+        or settings.database_mode.lower() != "live"
+    ):
+        return user
+    try:
+        with capacity_connection(settings) as capacity:
+            if is_database_admin(capacity, user.object_id):
+                return replace(user, is_admin=True)
+    except Exception:
+        logger.exception("Database administrator lookup failed")
+    return user
+
+
+def require_capacity_admin(request: Request) -> AppUser:
+    return require_admin_user(resolve_capacity_user(request), settings)
 
 
 @app.get("/health")
@@ -75,12 +109,118 @@ def health() -> dict[str, str]:
 
 @app.get("/api/v1/session", response_model=SessionResponse)
 def session(request: Request) -> SessionResponse:
-    user = resolve_user(request, settings)
+    user = resolve_capacity_user(request)
     return SessionResponse(
         authenticated=user.authenticated,
         is_admin=user.is_admin,
+        object_id=user.object_id,
         display_name=user.display_name,
     )
+
+
+@app.get("/api/v1/admin-users", response_model=AdminUserListResponse)
+def list_admin_users(request: Request) -> AdminUserListResponse:
+    user = require_capacity_admin(request)
+    try:
+        with capacity_connection(settings) as capacity:
+            database_admins = fetch_admin_users(capacity)
+        admins_by_id = {
+            admin.object_id.lower(): admin for admin in database_admins
+        }
+        for object_id in settings.admin_ids:
+            key = object_id.lower()
+            if key in admins_by_id:
+                admins_by_id[key] = admins_by_id[key].model_copy(
+                    update={"source": "configuration", "removable": False}
+                )
+            else:
+                admins_by_id[key] = configured_admin_record(
+                    object_id,
+                    current_object_id=user.object_id,
+                    current_display_name=user.display_name,
+                )
+        return AdminUserListResponse(
+            current_object_id=user.object_id or "",
+            admins=sorted(
+                admins_by_id.values(),
+                key=lambda admin: (admin.display_name.lower(), admin.object_id),
+            ),
+        )
+    except Exception:
+        logger.exception("Administrator list load failed")
+        raise HTTPException(
+            status_code=503, detail="Administrator list is temporarily unavailable"
+        ) from None
+
+
+@app.post("/api/v1/admin-users", response_model=AdminUserRecord, status_code=201)
+def add_admin_user(
+    update: AdminUserCreateRequest, request: Request
+) -> AdminUserRecord:
+    user = require_capacity_admin(request)
+    actor = user.display_name or user.object_id or "unknown-admin"
+    try:
+        with capacity_connection(settings) as capacity:
+            saved = save_admin_user(
+                capacity,
+                object_id=update.object_id,
+                display_name=update.display_name,
+                email=update.email,
+                updated_by=actor,
+            )
+        if update.object_id.lower() in settings.admin_ids:
+            return saved.model_copy(
+                update={"source": "configuration", "removable": False}
+            )
+        return saved
+    except Exception:
+        logger.exception("Administrator save failed")
+        raise HTTPException(
+            status_code=503, detail="Administrator could not be saved"
+        ) from None
+
+
+@app.delete(
+    "/api/v1/admin-users/{object_id}",
+    response_model=AdminUserDeleteResponse,
+)
+def delete_admin_user(
+    object_id: str, request: Request
+) -> AdminUserDeleteResponse:
+    user = require_capacity_admin(request)
+    try:
+        normalised_id = AdminUserCreateRequest(
+            object_id=object_id,
+            display_name="Validation",
+        ).object_id
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    if normalised_id.lower() in settings.admin_ids:
+        raise HTTPException(
+            status_code=409,
+            detail="Configured administrators must be removed from the Azure app configuration",
+        )
+    if user.object_id and normalised_id.lower() == user.object_id.lower():
+        raise HTTPException(
+            status_code=409,
+            detail="You cannot remove your own administrator access",
+        )
+    actor = user.display_name or user.object_id or "unknown-admin"
+    try:
+        with capacity_connection(settings) as capacity:
+            removed = remove_admin_user(
+                capacity, object_id=normalised_id, updated_by=actor
+            )
+        if not removed:
+            raise HTTPException(status_code=404, detail="Administrator not found")
+        return AdminUserDeleteResponse(object_id=normalised_id, removed=True)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Administrator removal failed")
+        raise HTTPException(
+            status_code=503, detail="Administrator could not be removed"
+        ) from None
 
 
 @app.get("/api/v1/programme-planning", response_model=ProgrammePlanningResponse)
@@ -105,7 +245,7 @@ def programme_planning(academic_year: str | None = None) -> ProgrammePlanningRes
 def update_programme(
     programme_code: str, update: ProgrammeUpdateRequest, request: Request
 ) -> ProgrammePlanningRecord:
-    user = require_admin(request, settings)
+    user = require_capacity_admin(request)
     actor = user.display_name or user.object_id or "unknown-admin"
     try:
         with capacity_connection(settings) as capacity:
@@ -136,7 +276,7 @@ def update_planned_cohort(
     update: PlannedCohortUpdateRequest,
     request: Request,
 ) -> PlannedCohortRecord:
-    user = require_admin(request, settings)
+    user = require_capacity_admin(request)
     actor = user.display_name or user.object_id or "unknown-admin"
     try:
         with capacity_connection(settings) as capacity:
@@ -335,7 +475,7 @@ def refresh_tutor_discovery() -> TutorDiscoverySummary:
 def acknowledge_new_tutor(
     tutor_id: str, request: Request
 ) -> TutorAcknowledgementResponse:
-    user = require_admin(request, settings)
+    user = require_capacity_admin(request)
     actor = user.display_name or user.object_id or "unknown-admin"
     try:
         with capacity_connection(settings) as capacity:
@@ -366,7 +506,7 @@ def acknowledge_new_tutor(
 def update_tutor_capacity(
     tutor_id: str, update: TutorUpdateRequest, request: Request
 ) -> TutorUpdateResponse:
-    user = require_admin(request, settings)
+    user = require_capacity_admin(request)
     as_of_date = date.today()
     try:
         with attendance_connection(settings) as attendance:
@@ -416,7 +556,7 @@ def update_tutor_capacity(
 def update_tutor_status(
     tutor_id: str, update: TutorStatusUpdateRequest, request: Request
 ) -> TutorStatusUpdateResponse:
-    user = require_admin(request, settings)
+    user = require_capacity_admin(request)
     as_of_date = date.today()
     try:
         with attendance_connection(settings) as attendance:

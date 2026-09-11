@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Workstream(StrEnum):
@@ -211,7 +213,59 @@ class PredictiveForecastResponse(BaseModel):
 class SessionResponse(BaseModel):
     authenticated: bool
     is_admin: bool
+    object_id: str | None = None
     display_name: str | None = None
+
+
+class AdminUserRecord(BaseModel):
+    object_id: str
+    display_name: str
+    email: str | None = None
+    source: Literal["configuration", "database"]
+    created_at: datetime | None = None
+    created_by: str | None = None
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+    removable: bool
+
+
+class AdminUserListResponse(BaseModel):
+    current_object_id: str
+    admins: list[AdminUserRecord]
+
+
+class AdminUserCreateRequest(BaseModel):
+    object_id: str
+    display_name: str = Field(min_length=1, max_length=200)
+    email: str | None = Field(default=None, max_length=320)
+
+    @field_validator("object_id")
+    @classmethod
+    def normalise_object_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value.strip()))
+        except (AttributeError, ValueError):
+            raise ValueError("object_id must be a Microsoft Entra Object ID") from None
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def trim_display_name(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalise_email(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        candidate = value.strip().lower()
+        if "@" not in candidate:
+            raise ValueError("email must be a valid email address")
+        return candidate
+
+
+class AdminUserDeleteResponse(BaseModel):
+    object_id: str
+    removed: bool
 
 
 class TutorAdminRecord(BaseModel):

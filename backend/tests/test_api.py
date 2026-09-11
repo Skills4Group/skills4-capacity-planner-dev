@@ -91,6 +91,11 @@ def test_tutor_acknowledgement_is_disabled_without_platform_authentication() -> 
     assert response.status_code == 503
 
 
+def test_admin_directory_is_disabled_without_platform_authentication() -> None:
+    response = client.get("/api/v1/admin-users")
+    assert response.status_code == 503
+
+
 def test_tutor_discovery_refresh_requires_live_database_mode() -> None:
     response = client.post("/api/v1/tutors/discovery/refresh")
     assert response.status_code == 503

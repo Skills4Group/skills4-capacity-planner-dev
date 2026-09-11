@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, status
@@ -15,7 +16,11 @@ class AppUser:
     display_name: str | None = None
 
 
-def resolve_user(request: Request, settings: Settings) -> AppUser:
+def resolve_user(
+    request: Request,
+    settings: Settings,
+    additional_admin_ids: Collection[str] = (),
+) -> AppUser:
     if not settings.auth_enabled:
         return AppUser(authenticated=False, is_admin=False)
     object_id = request.headers.get("x-ms-client-principal-id")
@@ -24,19 +29,31 @@ def resolve_user(request: Request, settings: Settings) -> AppUser:
         return AppUser(authenticated=False, is_admin=False)
     return AppUser(
         authenticated=True,
-        is_admin=object_id.lower() in settings.admin_ids,
+        is_admin=(
+            object_id.lower() in settings.admin_ids
+            or object_id.lower() in {value.lower() for value in additional_admin_ids}
+        ),
         object_id=object_id,
         display_name=display_name,
     )
 
 
-def require_admin(request: Request, settings: Settings) -> AppUser:
+def require_admin(
+    request: Request,
+    settings: Settings,
+    additional_admin_ids: Collection[str] = (),
+) -> AppUser:
+    return require_admin_user(
+        resolve_user(request, settings, additional_admin_ids), settings
+    )
+
+
+def require_admin_user(user: AppUser, settings: Settings) -> AppUser:
     if not settings.auth_enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Administrative writes are not enabled",
         )
-    user = resolve_user(request, settings)
     if not user.authenticated:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -52,3 +52,19 @@ def test_only_allowlisted_authenticated_user_is_admin() -> None:
     assert admin.authenticated and admin.is_admin
     assert admin.display_name == "Admin User"
     assert non_admin.authenticated and not non_admin.is_admin
+
+
+def test_database_admin_ids_extend_the_configured_allowlist() -> None:
+    settings = Settings(auth_enabled=True, admin_object_ids="bootstrap-id")
+    request = request_with_headers(
+        {
+            "x-ms-client-principal-id": "DATABASE-ID",
+            "x-ms-client-principal-name": "Database Admin",
+        }
+    )
+
+    user = resolve_user(request, settings, {"database-id"})
+    required = require_admin(request, settings, {"DATABASE-ID"})
+
+    assert user.authenticated and user.is_admin
+    assert required.object_id == "DATABASE-ID"

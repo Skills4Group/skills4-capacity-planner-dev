@@ -3,6 +3,7 @@ import './App.css'
 import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
 import { PredictiveForecastView } from './PredictiveForecastView'
+import { SettingsView } from './SettingsView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
 import { defaultForecastMonth, localMonthKey, selectMonthOptions, selectRollingMonths } from './rollingMonths'
@@ -44,7 +45,7 @@ function statusFor(row: TutorMonth) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Utilisation' | 'Tutors'>('Dashboard')
+  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Utilisation' | 'Tutors' | 'Settings'>('Dashboard')
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
   const [selectedMonth, setSelectedMonth] = useState(defaultForecastMonth(demoForecast.months))
@@ -155,7 +156,7 @@ function App() {
               key={item.label}
               className={`nav-item ${activeView === item.label ? 'active' : ''}`}
               onClick={() => {
-                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Predictive Forecasting' || item.label === 'Utilisation' || item.label === 'Tutors') setActiveView(item.label)
+                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Predictive Forecasting' || item.label === 'Utilisation' || item.label === 'Tutors' || item.label === 'Settings') setActiveView(item.label)
               }}
             >
               <LineIcon path={item.path} />
@@ -197,6 +198,8 @@ function App() {
             onForecastRefresh={refreshForecast}
             onDiscoveryCountChange={setTutorDiscoveryCount}
           />
+        ) : activeView === 'Settings' ? (
+          <SettingsView />
         ) : (
           <>
         <header className="topbar">
