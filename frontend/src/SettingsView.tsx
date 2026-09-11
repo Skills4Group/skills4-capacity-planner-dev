@@ -123,8 +123,9 @@ export function SettingsView() {
         <header className="topbar"><div><p className="eyebrow">Application administration</p><h1>Settings</h1><p className="page-intro">Manage Capacity Tracker access and configuration.</p></div></header>
         <section className="settings-access-card">
           <p className="eyebrow">Read-only access</p>
-          <h2>Administrator permission required</h2>
-          <p>You are signed in through Microsoft Entra ID, but your account is not authorised to manage Capacity Tracker administrators.</p>
+          <h2>{session?.authenticated ? 'Administrator permission required' : 'Sign in to manage administrators'}</h2>
+          <p>{session?.authenticated ? 'You are signed in through Microsoft Entra ID, but your account is not authorised to manage Capacity Tracker administrators.' : 'Sign in with an authorised Microsoft Entra account to open the administrator directory.'}</p>
+          {!session?.authenticated && <a className="admin-signin" href="/.auth/login/aad?post_login_redirect_uri=/">Sign in as admin</a>}
           {session?.object_id && <dl><dt>Your Entra Object ID</dt><dd>{session.object_id}</dd></dl>}
           {error && <div className="tutor-message error" role="alert">{error}</div>}
         </section>
