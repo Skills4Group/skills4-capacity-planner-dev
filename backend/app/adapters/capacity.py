@@ -108,6 +108,14 @@ class TutorStatusRecord:
 
 
 @dataclass(frozen=True)
+class TutorIdentityAliasRecord:
+    alias_tutor_id: str
+    canonical_tutor_id: str
+    alias_tutor_name: str | None = None
+    canonical_tutor_name: str | None = None
+
+
+@dataclass(frozen=True)
 class TutorDiscoveryRecord:
     tutor_id: str
     tutor_name: str
@@ -120,6 +128,26 @@ class TutorDiscoveryRecord:
     @property
     def is_new(self) -> bool:
         return self.active_in_attendance and self.acknowledged_at is None
+
+
+def fetch_tutor_identity_aliases(connection: Any) -> list[TutorIdentityAliasRecord]:
+    """Read Capacity-owned mappings from historic/source tutor identities."""
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '10s'")
+            cursor.execute(
+                """
+                SELECT alias_tutor_id,
+                       canonical_tutor_id,
+                       alias_tutor_name,
+                       canonical_tutor_name
+                FROM capacity.tutor_identity_alias
+                WHERE active IS TRUE
+                ORDER BY alias_tutor_id
+                """
+            )
+            return [TutorIdentityAliasRecord(*row) for row in cursor.fetchall()]
 
 
 def sync_tutor_discovery(

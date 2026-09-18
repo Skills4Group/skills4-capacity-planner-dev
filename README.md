@@ -301,6 +301,13 @@ setting; people who merely share a name are not merged.
 When the learner feed uses a Bud tutor ID that is absent from the active tutor
 directory, it is reconciled by normalized tutor name only when that name identifies
 exactly one active tutor. Ambiguous names are deliberately left unmatched.
+Renamed or historic identities that cannot be reconciled safely by those rules are
+stored explicitly in the Capacity-owned `capacity.tutor_identity_alias` table. The
+alias is applied before caseload, utilisation, forecast, and tutor-directory
+calculations, while the active Attendance tutor remains the canonical record.
+Migration `backend/migrations/010_add_tutor_identity_aliases.sql` creates this table
+and seeds the confirmed Elouise Frost external identity to Ellie Frost's active
+Attendance identity. Attendance is not modified.
 
 ### New tutor discovery
 

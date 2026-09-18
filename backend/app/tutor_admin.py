@@ -5,6 +5,7 @@ from datetime import date
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from .adapters.capacity import (
     TutorDiscoveryRecord,
+    TutorIdentityAliasRecord,
     TutorSettingRecord,
     TutorStatusRecord,
 )
@@ -22,15 +23,18 @@ def build_tutor_admin_records(
     programme_mappings: dict[str, Workstream],
     tutor_discoveries: list[TutorDiscoveryRecord] | None = None,
     tutor_statuses: list[TutorStatusRecord] | None = None,
+    tutor_aliases: list[TutorIdentityAliasRecord] | None = None,
 ) -> list[TutorAdminRecord]:
     tutor_statuses = consolidate_tutor_statuses(
         tutors=attendance_tutors,
         statuses=tutor_statuses or [],
+        aliases=tutor_aliases,
     )
     attendance_learners, attendance_tutors, tutor_settings = consolidate_tutor_inputs(
         learners=attendance_learners,
         tutors=attendance_tutors,
         settings=tutor_settings,
+        aliases=tutor_aliases,
     )
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
     discoveries_by_id = {

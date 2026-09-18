@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from app.adapters.capacity import (
     TutorDiscoveryRecord,
+    TutorIdentityAliasRecord,
     TutorSettingRecord,
     TutorStatusRecord,
 )
@@ -174,6 +175,49 @@ def test_unique_tutor_name_reconciles_bud_learner_id_to_internal_roster_id() -> 
     assert records[0].tutor_id == "attendance-internal:9"
     assert records[0].current_caseload == 1
     assert records[0].remaining_capacity == 54
+
+
+def test_explicit_alias_reconciles_renamed_external_tutor_identity() -> None:
+    source = attendance_learner(
+        "L1", "423CEC9E-0471-40A5-9ADB-B43C00F63258", "Pharmacy Services"
+    )
+    renamed_learner = AttendanceLearnerRecord(
+        learner_id=source.learner_id,
+        tutor_id=source.tutor_id,
+        tutor_name="Elouise Frost",
+        programme_name=source.programme_name,
+        start_date=source.start_date,
+        expected_end_date=source.expected_end_date,
+        status_desc=source.status_desc,
+        synced_at=source.synced_at,
+    )
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[renamed_learner],
+        attendance_tutors=[AttendanceTutorRecord("attendance-internal:19", "Ellie Frost")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "attendance-internal:19",
+                "Ellie Frost",
+                Workstream.PHARMACY,
+                50,
+            )
+        ],
+        programme_mappings={},
+        tutor_aliases=[
+            TutorIdentityAliasRecord(
+                "423CEC9E-0471-40A5-9ADB-B43C00F63258",
+                "attendance-internal:19",
+                "Elouise Frost",
+                "Ellie Frost",
+            )
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].tutor_id == "attendance-internal:19"
+    assert records[0].tutor_name == "Ellie Frost"
+    assert records[0].current_caseload == 1
 
 
 def test_unacknowledged_discovery_is_exposed_as_new_tutor() -> None:

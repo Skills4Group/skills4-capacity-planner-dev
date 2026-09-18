@@ -1,7 +1,11 @@
 from datetime import date, datetime
 
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from app.adapters.capacity import TutorSettingRecord, TutorStatusRecord
+from app.adapters.capacity import (
+    TutorIdentityAliasRecord,
+    TutorSettingRecord,
+    TutorStatusRecord,
+)
 from app.forecast import build_forecast
 from app.live_forecast import build_live_request, map_programme
 from app.models import Workstream
@@ -200,6 +204,47 @@ def test_forecast_reconciles_unique_tutor_name_when_learner_id_differs() -> None
 
     assert request.tutors[0].tutor_id == "attendance-internal:9"
     assert request.existing_learners[0].tutor_id == "attendance-internal:9"
+
+
+def test_forecast_uses_explicit_alias_for_renamed_tutor_identity() -> None:
+    source = learner("423CEC9E-0471-40A5-9ADB-B43C00F63258", "Pharmacy Services")
+    renamed_learner = AttendanceLearnerRecord(
+        learner_id=source.learner_id,
+        tutor_id=source.tutor_id,
+        tutor_name="Elouise Frost",
+        programme_name=source.programme_name,
+        start_date=source.start_date,
+        expected_end_date=source.expected_end_date,
+        status_desc=source.status_desc,
+        synced_at=source.synced_at,
+    )
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=1,
+        attendance_learners=[renamed_learner],
+        attendance_tutors=[AttendanceTutorRecord("attendance-internal:19", "Ellie Frost")],
+        tutor_settings=[
+            TutorSettingRecord(
+                "attendance-internal:19",
+                "Ellie Frost",
+                Workstream.PHARMACY,
+                50,
+            )
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+        tutor_aliases=[
+            TutorIdentityAliasRecord(
+                "423CEC9E-0471-40A5-9ADB-B43C00F63258",
+                "attendance-internal:19",
+                "Elouise Frost",
+                "Ellie Frost",
+            )
+        ],
+    )
+
+    assert request.tutors[0].tutor_id == "attendance-internal:19"
+    assert request.existing_learners[0].tutor_id == "attendance-internal:19"
 
 
 def test_inactive_tutor_is_excluded_but_their_learners_remain_demand() -> None:

@@ -4,7 +4,11 @@ from collections import Counter, defaultdict
 from datetime import date
 
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from .adapters.capacity import TutorSettingRecord, TutorStatusRecord
+from .adapters.capacity import (
+    TutorIdentityAliasRecord,
+    TutorSettingRecord,
+    TutorStatusRecord,
+)
 from .models import (
     ExistingLearner,
     ForecastRequest,
@@ -68,16 +72,19 @@ def build_live_request(
     programme_mappings: dict[str, Workstream],
     pipeline_learners: list[PipelineLearner],
     tutor_statuses: list[TutorStatusRecord] | None = None,
+    tutor_aliases: list[TutorIdentityAliasRecord] | None = None,
     history_months: int = 0,
 ) -> ForecastRequest:
     tutor_statuses = consolidate_tutor_statuses(
         tutors=attendance_tutors,
         statuses=tutor_statuses or [],
+        aliases=tutor_aliases,
     )
     attendance_learners, attendance_tutors, tutor_settings = consolidate_tutor_inputs(
         learners=attendance_learners,
         tutors=attendance_tutors,
         settings=tutor_settings,
+        aliases=tutor_aliases,
     )
     settings_by_id = {setting.tutor_id: setting for setting in tutor_settings}
     statuses_by_id = {status.tutor_id: status for status in tutor_statuses}

@@ -16,6 +16,7 @@ from .adapters.capacity import (
     acknowledge_tutor_discovery,
     fetch_capacity_inputs,
     fetch_tutor_configuration,
+    fetch_tutor_identity_aliases,
     save_tutor_setting,
     save_tutor_status,
     sync_tutor_discovery,
@@ -357,6 +358,7 @@ def live_forecast() -> ForecastResponse:
             tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
                 capacity, date.today()
             )
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
         request = build_live_request(
             as_of_date=date.today(),
             months=settings.forecast_months,
@@ -367,6 +369,7 @@ def live_forecast() -> ForecastResponse:
             programme_mappings=mappings,
             pipeline_learners=pipeline,
             tutor_statuses=tutor_statuses,
+            tutor_aliases=tutor_aliases,
         )
         return build_forecast(request)
     except Exception:
@@ -389,6 +392,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
                 capacity, as_of_date
             )
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
             planning_years = {
                 academic_year_for(as_of_date),
                 academic_year_for(date(as_of_date.year + 1, as_of_date.month, 1)),
@@ -412,6 +416,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             programme_mappings=mappings,
             pipeline_learners=pipeline,
             tutor_statuses=tutor_statuses,
+            tutor_aliases=tutor_aliases,
         )
         return build_predictive_forecast(
             as_of_date=as_of_date,
@@ -443,11 +448,12 @@ def list_tutors() -> TutorListResponse:
             tutor_settings, mappings, tutor_statuses = fetch_tutor_configuration(
                 capacity, as_of_date
             )
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
             programmes, _ = fetch_programme_planning(
                 capacity, academic_year_for(as_of_date)
             )
             discoveries = sync_tutor_discovery(
-                capacity, build_tutor_identity_map(tutors).tutors
+                capacity, build_tutor_identity_map(tutors, tutor_aliases).tutors
             )
         return TutorListResponse(
             as_of_date=as_of_date,
@@ -459,6 +465,7 @@ def list_tutors() -> TutorListResponse:
                 programme_mappings=mappings,
                 tutor_discoveries=discoveries,
                 tutor_statuses=tutor_statuses,
+                tutor_aliases=tutor_aliases,
             ),
             new_tutor_count=sum(discovery.is_new for discovery in discoveries),
             programmes=programmes,

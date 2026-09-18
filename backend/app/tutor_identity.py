@@ -4,7 +4,11 @@ from collections import defaultdict
 from dataclasses import dataclass, replace
 
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
-from .adapters.capacity import TutorSettingRecord, TutorStatusRecord
+from .adapters.capacity import (
+    TutorIdentityAliasRecord,
+    TutorSettingRecord,
+    TutorStatusRecord,
+)
 
 
 INTERNAL_TUTOR_ID_PREFIX = "attendance-internal:"
@@ -29,6 +33,7 @@ class TutorIdentityMap:
 
 def build_tutor_identity_map(
     tutors: list[AttendanceTutorRecord],
+    aliases: list[TutorIdentityAliasRecord] | None = None,
 ) -> TutorIdentityMap:
     groups: dict[str, list[AttendanceTutorRecord]] = defaultdict(list)
     for tutor in tutors:
@@ -68,6 +73,22 @@ def build_tutor_identity_map(
             canonical_name_by_id[alias.tutor_id] = canonical.tutor_name
             suppressed_ids.add(alias.tutor_id)
 
+    # Explicit Capacity-owned aliases bridge renamed or historic source identities.
+    # Only aliases whose canonical target exists in the active Attendance roster are
+    # applied, preventing a stale mapping from creating a phantom active tutor.
+    for alias in aliases or []:
+        canonical_id = canonical_by_id.get(alias.canonical_tutor_id)
+        if canonical_id is None:
+            continue
+        canonical_by_id[alias.alias_tutor_id] = canonical_id
+        canonical_name_by_id[alias.alias_tutor_id] = canonical_name_by_id.get(
+            canonical_id,
+            alias.canonical_tutor_name or alias.alias_tutor_name or "",
+        )
+        alias_name_key = normalise_tutor_name(alias.alias_tutor_name)
+        if alias_name_key:
+            canonical_by_name[alias_name_key] = canonical_id
+
     return TutorIdentityMap(
         tutors=[tutor for tutor in tutors if tutor.tutor_id not in suppressed_ids],
         canonical_by_id=canonical_by_id,
@@ -89,12 +110,13 @@ def consolidate_tutor_inputs(
     learners: list[AttendanceLearnerRecord],
     tutors: list[AttendanceTutorRecord],
     settings: list[TutorSettingRecord],
+    aliases: list[TutorIdentityAliasRecord] | None = None,
 ) -> tuple[
     list[AttendanceLearnerRecord],
     list[AttendanceTutorRecord],
     list[TutorSettingRecord],
 ]:
-    identities = build_tutor_identity_map(tutors)
+    identities = build_tutor_identity_map(tutors, aliases)
     remapped_learners = [
         replace(
             learner,
@@ -133,8 +155,9 @@ def consolidate_tutor_statuses(
     *,
     tutors: list[AttendanceTutorRecord],
     statuses: list[TutorStatusRecord],
+    aliases: list[TutorIdentityAliasRecord] | None = None,
 ) -> list[TutorStatusRecord]:
-    identities = build_tutor_identity_map(tutors)
+    identities = build_tutor_identity_map(tutors, aliases)
     selected: dict[str, tuple[TutorStatusRecord, tuple[int, float, bool]]] = {}
     for status in statuses:
         original_id = status.tutor_id
