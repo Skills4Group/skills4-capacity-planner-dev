@@ -24,7 +24,9 @@ def build_tutor_admin_records(
     tutor_discoveries: list[TutorDiscoveryRecord] | None = None,
     tutor_statuses: list[TutorStatusRecord] | None = None,
     tutor_aliases: list[TutorIdentityAliasRecord] | None = None,
+    active_cohort_counts: dict[str, int] | None = None,
 ) -> list[TutorAdminRecord]:
+    active_cohort_counts = active_cohort_counts or {}
     tutor_statuses = consolidate_tutor_statuses(
         tutors=attendance_tutors,
         statuses=tutor_statuses or [],
@@ -115,6 +117,7 @@ def build_tutor_admin_records(
                 delivery_eligible=delivery_eligible,
                 programme_allocations=list(setting.programme_allocations) if setting else [],
                 current_caseload=current_caseload,
+                active_cohorts=active_cohort_counts.get(tutor.tutor_id, 0),
                 remaining_capacity=(
                     effective_capacity - current_caseload
                     if is_active and delivery_eligible

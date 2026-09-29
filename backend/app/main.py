@@ -11,7 +11,11 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .demo import build_demo_forecast, build_demo_predictive_forecast
 from .forecast import build_forecast
-from .adapters.attendance import fetch_active_tutors, fetch_learner_progress
+from .adapters.attendance import (
+    fetch_active_cohort_counts,
+    fetch_active_tutors,
+    fetch_learner_progress,
+)
 from .adapters.capacity import (
     acknowledge_tutor_discovery,
     fetch_capacity_inputs,
@@ -65,7 +69,7 @@ from .programme_planning import (
     save_programme_setting,
 )
 from .tutor_admin import build_tutor_admin_records
-from .tutor_identity import build_tutor_discovery_roster
+from .tutor_identity import build_tutor_discovery_roster, consolidate_tutor_counts
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -444,11 +448,17 @@ def list_tutors() -> TutorListResponse:
         with attendance_connection(settings) as attendance:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
+            active_cohort_counts = fetch_active_cohort_counts(attendance, as_of_date)
         with capacity_connection(settings) as capacity:
             tutor_settings, mappings, tutor_statuses = fetch_tutor_configuration(
                 capacity, as_of_date
             )
             tutor_aliases = fetch_tutor_identity_aliases(capacity)
+            active_cohort_counts = consolidate_tutor_counts(
+                counts=active_cohort_counts,
+                tutors=tutors,
+                aliases=tutor_aliases,
+            )
             programmes, _ = fetch_programme_planning(
                 capacity, academic_year_for(as_of_date)
             )
@@ -470,6 +480,7 @@ def list_tutors() -> TutorListResponse:
                 tutor_discoveries=discoveries,
                 tutor_statuses=tutor_statuses,
                 tutor_aliases=tutor_aliases,
+                active_cohort_counts=active_cohort_counts,
             ),
             new_tutor_count=sum(discovery.is_new for discovery in discoveries),
             programmes=programmes,

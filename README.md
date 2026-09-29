@@ -363,9 +363,10 @@ repository, and must be rotated before 11 August 2027.
 The narrowly scoped Attendance managed-identity scripts are kept separately in
 `backend/migrations/attendance`. They must be run by the Attendance server's
 configured Microsoft Entra administrator: script `001` against `postgres`, then
-scripts `002` and `003` against `attendance`. They grant `SELECT` only on
-`public.learner_progress` and `public.tutors` and enforce read-only transactions
-for this identity in the Attendance database.
+scripts `002`, `003`, and `004` against `attendance`. They grant `SELECT` only on
+`public.learner_progress`, `public.tutors`, and `public.cohorts` and enforce
+read-only transactions for this identity in the Attendance database. Cohort access
+is used solely to show each tutor's current active-cohort count.
 
 ## Local development
 

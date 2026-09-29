@@ -39,6 +39,7 @@ function tutor(overrides: Partial<TutorAdminRecord> = {}): TutorAdminRecord {
     delivery_eligible: true,
     programme_allocations: [],
     current_caseload: 48,
+    active_cohorts: 3,
     remaining_capacity: 7,
     has_saved_setting: false,
     is_active: true,

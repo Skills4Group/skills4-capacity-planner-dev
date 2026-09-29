@@ -272,6 +272,7 @@ class TutorAdminRecord(BaseModel):
     delivery_eligible: bool = True
     programme_allocations: list[TutorCapacityAllocation] = Field(default_factory=list)
     current_caseload: int
+    active_cohorts: int = Field(default=0, ge=0)
     remaining_capacity: int
     has_saved_setting: bool
     is_active: bool = True

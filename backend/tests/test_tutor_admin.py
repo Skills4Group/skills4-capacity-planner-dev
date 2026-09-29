@@ -317,6 +317,19 @@ def test_unacknowledged_discovery_is_exposed_as_new_tutor() -> None:
     assert records[0].workstream is None
 
 
+def test_tutor_directory_includes_active_cohort_count() -> None:
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[],
+        programme_mappings={},
+        active_cohort_counts={"T1": 4},
+    )
+
+    assert records[0].active_cohorts == 4
+
+
 def test_source_only_discovery_is_visible_without_contributing_capacity() -> None:
     first_seen = datetime(2026, 8, 20, 9, 30, tzinfo=timezone.utc)
     learner = attendance_learner("L-HENRY", "HENRY-BUD-ID", "Pharmacy Services")

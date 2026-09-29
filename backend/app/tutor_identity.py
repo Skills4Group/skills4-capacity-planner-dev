@@ -146,6 +146,21 @@ def build_tutor_discovery_roster(
     )
 
 
+def consolidate_tutor_counts(
+    *,
+    counts: dict[str, int],
+    tutors: list[AttendanceTutorRecord],
+    aliases: list[TutorIdentityAliasRecord] | None = None,
+) -> dict[str, int]:
+    """Aggregate a tutor metric onto the same canonical identities used by the UI."""
+    identities = build_tutor_identity_map(tutors, aliases)
+    consolidated: dict[str, int] = {}
+    for tutor_id, count in counts.items():
+        canonical_id = identities.resolve(tutor_id, None) or tutor_id
+        consolidated[canonical_id] = consolidated.get(canonical_id, 0) + count
+    return consolidated
+
+
 def _setting_rank(
     setting: TutorSettingRecord, original_id: str, canonical_id: str
 ) -> tuple[int, float, bool]:

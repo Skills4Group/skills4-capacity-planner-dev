@@ -49,6 +49,24 @@ ORDER BY tutor_id
 """
 
 
+ACTIVE_COHORT_COUNTS_QUERY = """
+SELECT
+    COALESCE(
+        NULLIF(btrim(t.external_system_id::text), ''),
+        'attendance-internal:' || t.id::text
+    ) AS tutor_id,
+    COUNT(DISTINCT c.id)::integer AS active_cohorts
+FROM public.tutors t
+JOIN public.cohorts c ON c.tutor_id = t.id
+WHERE c.active IS TRUE
+  AND c.deleted_at IS NULL
+  AND c.start_date <= %(as_of_date)s
+  AND (c.end_date IS NULL OR c.end_date >= %(as_of_date)s)
+GROUP BY t.id, t.external_system_id
+ORDER BY tutor_id
+"""
+
+
 @dataclass(frozen=True)
 class AttendanceTutorRecord:
     tutor_id: str
@@ -73,3 +91,15 @@ def fetch_active_tutors(connection: Any) -> list[AttendanceTutorRecord]:
             cursor.execute("SET LOCAL statement_timeout = '30s'")
             cursor.execute(ACTIVE_TUTORS_QUERY)
             return [AttendanceTutorRecord(*row) for row in cursor.fetchall()]
+
+
+def fetch_active_cohort_counts(
+    connection: Any, as_of_date: date
+) -> dict[str, int]:
+    """Count distinct current active cohorts assigned to each Attendance tutor."""
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '30s'")
+            cursor.execute(ACTIVE_COHORT_COUNTS_QUERY, {"as_of_date": as_of_date})
+            return {tutor_id: active_cohorts for tutor_id, active_cohorts in cursor.fetchall()}

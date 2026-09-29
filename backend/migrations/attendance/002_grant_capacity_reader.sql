@@ -11,7 +11,7 @@ TO "s4capdevmwhe4psk55o7s-identity";
 GRANT USAGE ON SCHEMA public
 TO "s4capdevmwhe4psk55o7s-identity";
 
-GRANT SELECT ON TABLE public.learner_progress, public.tutors
+GRANT SELECT ON TABLE public.learner_progress, public.tutors, public.cohorts
 TO "s4capdevmwhe4psk55o7s-identity";
 
 ALTER ROLE "s4capdevmwhe4psk55o7s-identity"

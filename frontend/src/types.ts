@@ -117,6 +117,7 @@ export interface TutorAdminRecord {
   delivery_eligible: boolean
   programme_allocations: TutorCapacityAllocation[]
   current_caseload: number
+  active_cohorts: number
   remaining_capacity: number
   has_saved_setting: boolean
   is_active: boolean
