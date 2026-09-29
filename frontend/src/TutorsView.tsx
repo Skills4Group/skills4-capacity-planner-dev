@@ -9,6 +9,10 @@ import {
   type Workstream,
 } from './types'
 import { calculateTutorUtilisation } from './tutorUtilisation'
+import {
+  effectiveTutorProgrammeAllocations,
+  tutorMatchesProgramme,
+} from './tutorProgrammeAllocation'
 
 interface TutorDraft {
   capacity: string
@@ -22,18 +26,7 @@ function initialAllocations(
   tutor: TutorAdminRecord,
   programmes: ProgrammePlanningRecord[],
 ) {
-  if (tutor.programme_allocations.length) {
-    return tutor.programme_allocations.map((allocation) => ({
-      programmeCode: allocation.programme_code,
-      capacity: String(allocation.capacity),
-    }))
-  }
-  const generic = programmes.find((programme) => (
-    programme.active
-    && programme.workstream === tutor.workstream
-    && programme.programme_code.endsWith('-general')
-  )) ?? programmes.find((programme) => programme.active && programme.workstream === tutor.workstream)
-  return generic ? [{ programmeCode: generic.programme_code, capacity: String(tutor.capacity) }] : []
+  return effectiveTutorProgrammeAllocations(tutor, programmes)
 }
 
 interface TutorsViewProps {
@@ -126,11 +119,10 @@ export function TutorsView({
                 ? tutor.is_active && !tutor.delivery_eligible
               : tutor.programme_allocations.some((allocation) => allocation.workstream === workstreamFilter)
                 || (tutor.programme_allocations.length === 0 && tutor.workstream === workstreamFilter))
-      const matchesProgramme = programmeFilter === 'All'
-        || tutor.programme_allocations.some((allocation) => allocation.programme_code === programmeFilter)
+      const matchesProgramme = tutorMatchesProgramme(tutor, programmes, programmeFilter)
       return matchesSearch && matchesWorkstream && matchesProgramme
     })
-  }, [programmeFilter, search, tutors, workstreamFilter])
+  }, [programmeFilter, programmes, search, tutors, workstreamFilter])
 
   useEffect(() => {
     const top = topScrollRef.current
