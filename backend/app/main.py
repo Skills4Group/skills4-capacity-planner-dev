@@ -65,7 +65,7 @@ from .programme_planning import (
     save_programme_setting,
 )
 from .tutor_admin import build_tutor_admin_records
-from .tutor_identity import build_tutor_identity_map
+from .tutor_identity import build_tutor_discovery_roster
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -452,9 +452,13 @@ def list_tutors() -> TutorListResponse:
             programmes, _ = fetch_programme_planning(
                 capacity, academic_year_for(as_of_date)
             )
-            discoveries = sync_tutor_discovery(
-                capacity, build_tutor_identity_map(tutors, tutor_aliases).tutors
+            discovery_tutors = build_tutor_discovery_roster(
+                tutors=tutors,
+                learners=learners,
+                as_of_date=as_of_date,
+                aliases=tutor_aliases,
             )
+            discoveries = sync_tutor_discovery(capacity, discovery_tutors)
         return TutorListResponse(
             as_of_date=as_of_date,
             tutors=build_tutor_admin_records(
@@ -486,10 +490,17 @@ def refresh_tutor_discovery() -> TutorDiscoverySummary:
         raise HTTPException(status_code=503, detail="Live data mode is not configured")
     try:
         with attendance_connection(settings) as attendance:
+            learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
-        canonical_tutors = build_tutor_identity_map(tutors).tutors
         with capacity_connection(settings) as capacity:
-            discoveries = sync_tutor_discovery(capacity, canonical_tutors)
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
+            discovery_tutors = build_tutor_discovery_roster(
+                tutors=tutors,
+                learners=learners,
+                as_of_date=date.today(),
+                aliases=tutor_aliases,
+            )
+            discoveries = sync_tutor_discovery(capacity, discovery_tutors)
         new_tutors = [discovery for discovery in discoveries if discovery.is_new]
         return TutorDiscoverySummary(
             checked_at=datetime.now(timezone.utc),
@@ -552,12 +563,22 @@ def update_tutor_capacity(
     as_of_date = date.today()
     try:
         with attendance_connection(settings) as attendance:
+            learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
-        tutor = next((item for item in tutors if item.tutor_id == tutor_id), None)
-        if tutor is None:
-            raise HTTPException(status_code=404, detail="Active tutor not found")
         actor = user.display_name or user.object_id or "unknown-admin"
         with capacity_connection(settings) as capacity:
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
+            discovery_tutors = build_tutor_discovery_roster(
+                tutors=tutors,
+                learners=learners,
+                as_of_date=as_of_date,
+                aliases=tutor_aliases,
+            )
+            tutor = next(
+                (item for item in discovery_tutors if item.tutor_id == tutor_id), None
+            )
+            if tutor is None:
+                raise HTTPException(status_code=404, detail="Current tutor not found")
             save_tutor_setting(
                 capacity,
                 tutor_id=tutor.tutor_id,
@@ -602,12 +623,19 @@ def update_tutor_status(
     as_of_date = date.today()
     try:
         with attendance_connection(settings) as attendance:
+            learners = fetch_learner_progress(attendance)
             attendance_tutors = fetch_active_tutors(attendance)
-        canonical_tutors = build_tutor_identity_map(attendance_tutors).tutors
-        tutor = next(
-            (item for item in canonical_tutors if item.tutor_id == tutor_id), None
-        )
         with capacity_connection(settings) as capacity:
+            tutor_aliases = fetch_tutor_identity_aliases(capacity)
+            discovery_tutors = build_tutor_discovery_roster(
+                tutors=attendance_tutors,
+                learners=learners,
+                as_of_date=as_of_date,
+                aliases=tutor_aliases,
+            )
+            tutor = next(
+                (item for item in discovery_tutors if item.tutor_id == tutor_id), None
+            )
             tutor_settings, _, tutor_statuses = fetch_tutor_configuration(
                 capacity, as_of_date
             )

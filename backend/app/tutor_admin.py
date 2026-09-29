@@ -55,6 +55,13 @@ def build_tutor_admin_records(
             caseloads.setdefault(learner.tutor_id, set()).add(learner.learner_id)
 
     directory_by_id = {tutor.tutor_id: tutor for tutor in attendance_tutors}
+    attendance_roster_ids = set(directory_by_id)
+    for discovery in tutor_discoveries or []:
+        if discovery.active_in_attendance:
+            directory_by_id.setdefault(
+                discovery.tutor_id,
+                AttendanceTutorRecord(discovery.tutor_id, discovery.tutor_name),
+            )
     for setting in tutor_settings:
         directory_by_id.setdefault(
             setting.tutor_id,
@@ -71,12 +78,19 @@ def build_tutor_admin_records(
         setting = settings_by_id.get(tutor.tutor_id)
         discovery = discoveries_by_id.get(tutor.tutor_id)
         status = statuses_by_id.get(tutor.tutor_id)
+        is_unconfigured_source_only = (
+            tutor.tutor_id not in attendance_roster_ids and setting is None
+        )
         is_active = status.is_active if status else True
         workstream = setting.workstream if setting else inferred.get(tutor.tutor_id)
         capacity = setting.capacity if setting else 50
         on_maternity_leave = setting.on_maternity_leave if setting else False
         maternity_return_date = setting.maternity_return_date if setting else None
-        delivery_eligible = setting.delivery_eligible if setting else True
+        delivery_eligible = (
+            setting.delivery_eligible
+            if setting
+            else not is_unconfigured_source_only
+        )
         currently_on_leave = on_maternity_leave and (
             maternity_return_date is None or maternity_return_date > as_of_date
         )

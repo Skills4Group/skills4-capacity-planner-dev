@@ -9,6 +9,7 @@ from app.adapters.capacity import (
 )
 from app.models import Workstream
 from app.tutor_admin import build_tutor_admin_records
+from app.tutor_identity import build_tutor_discovery_roster
 
 
 def attendance_learner(
@@ -24,6 +25,75 @@ def attendance_learner(
         status_desc=status,
         synced_at=datetime(2026, 8, 1),
     )
+
+
+def test_discovery_roster_includes_current_learner_assigned_tutor_missing_from_directory() -> None:
+    learner = attendance_learner("L-HENRY", "HENRY-BUD-ID", "Pharmacy Services")
+    learner = AttendanceLearnerRecord(
+        learner_id=learner.learner_id,
+        tutor_id=learner.tutor_id,
+        tutor_name="Henry Baldry",
+        programme_name=learner.programme_name,
+        start_date=learner.start_date,
+        expected_end_date=learner.expected_end_date,
+        status_desc=learner.status_desc,
+        synced_at=learner.synced_at,
+    )
+
+    roster = build_tutor_discovery_roster(
+        tutors=[AttendanceTutorRecord("T-EXISTING", "Existing Tutor")],
+        learners=[learner],
+        as_of_date=date(2026, 8, 11),
+    )
+
+    assert [(tutor.tutor_id, tutor.tutor_name) for tutor in roster] == [
+        ("T-EXISTING", "Existing Tutor"),
+        ("HENRY-BUD-ID", "Henry Baldry"),
+    ]
+
+
+def test_discovery_roster_ignores_non_consuming_and_expired_assignments() -> None:
+    on_break = attendance_learner("L-BREAK", "T-BREAK", "Pharmacy", "On Break")
+    expired = AttendanceLearnerRecord(
+        learner_id="L-EXPIRED",
+        tutor_id="T-EXPIRED",
+        tutor_name="Expired Tutor",
+        programme_name="Pharmacy",
+        start_date=date(2025, 1, 1),
+        expected_end_date=date(2026, 7, 31),
+        status_desc="In Progress",
+        synced_at=datetime(2026, 8, 1),
+    )
+
+    roster = build_tutor_discovery_roster(
+        tutors=[],
+        learners=[on_break, expired],
+        as_of_date=date(2026, 8, 11),
+    )
+
+    assert roster == []
+
+
+def test_discovery_roster_reconciles_source_id_to_unique_directory_name() -> None:
+    learner = attendance_learner("L1", "BUD-CERI", "Pharmacy Services")
+    learner = AttendanceLearnerRecord(
+        learner_id=learner.learner_id,
+        tutor_id=learner.tutor_id,
+        tutor_name=" Ceri  Maunder ",
+        programme_name=learner.programme_name,
+        start_date=learner.start_date,
+        expected_end_date=learner.expected_end_date,
+        status_desc=learner.status_desc,
+        synced_at=learner.synced_at,
+    )
+
+    roster = build_tutor_discovery_roster(
+        tutors=[AttendanceTutorRecord("attendance-internal:9", "Ceri Maunder")],
+        learners=[learner],
+        as_of_date=date(2026, 8, 11),
+    )
+
+    assert roster == [AttendanceTutorRecord("attendance-internal:9", "Ceri Maunder")]
 
 
 def test_tutor_directory_includes_idle_and_unassigned_tutors() -> None:
@@ -245,6 +315,48 @@ def test_unacknowledged_discovery_is_exposed_as_new_tutor() -> None:
     assert records[0].is_new is True
     assert records[0].first_seen_at == first_seen
     assert records[0].workstream is None
+
+
+def test_source_only_discovery_is_visible_without_contributing_capacity() -> None:
+    first_seen = datetime(2026, 8, 20, 9, 30, tzinfo=timezone.utc)
+    learner = attendance_learner("L-HENRY", "HENRY-BUD-ID", "Pharmacy Services")
+    learner = AttendanceLearnerRecord(
+        learner_id=learner.learner_id,
+        tutor_id=learner.tutor_id,
+        tutor_name="Henry Baldry",
+        programme_name=learner.programme_name,
+        start_date=learner.start_date,
+        expected_end_date=learner.expected_end_date,
+        status_desc=learner.status_desc,
+        synced_at=learner.synced_at,
+    )
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 20),
+        attendance_learners=[learner],
+        attendance_tutors=[],
+        tutor_settings=[],
+        programme_mappings={},
+        tutor_discoveries=[
+            TutorDiscoveryRecord(
+                tutor_id="HENRY-BUD-ID",
+                tutor_name="Henry Baldry",
+                first_seen_at=first_seen,
+                last_seen_at=first_seen,
+                acknowledged_at=None,
+                acknowledged_by=None,
+                active_in_attendance=True,
+            )
+        ],
+    )
+
+    assert len(records) == 1
+    assert records[0].is_new is True
+    assert records[0].current_caseload == 1
+    assert records[0].workstream == Workstream.PHARMACY
+    assert records[0].capacity == 50
+    assert records[0].delivery_eligible is False
+    assert records[0].effective_capacity == 0
+    assert records[0].remaining_capacity == 0
 
 
 def test_acknowledged_discovery_is_not_exposed_as_new_tutor() -> None:

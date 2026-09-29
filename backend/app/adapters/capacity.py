@@ -154,7 +154,7 @@ def sync_tutor_discovery(
     connection: Any,
     tutors: list[AttendanceTutorRecord],
 ) -> list[TutorDiscoveryRecord]:
-    """Mirror the canonical active roster into Capacity-owned discovery state."""
+    """Mirror the canonical current discovery roster into Capacity-owned state."""
     with connection.transaction():
         with connection.cursor() as cursor:
             cursor.execute("SET LOCAL statement_timeout = '30s'")

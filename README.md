@@ -313,11 +313,14 @@ Attendance identity. Attendance is not modified.
 
 Capacity Tracker maintains a Capacity-owned discovery ledger in
 `capacity.tutor_discovery`; Attendance remains a read-only source. The app checks the
-canonical active Attendance tutor roster when the app opens, whenever the Tutors tab
-loads, and every five minutes while the app is open. Each tutor has a first-seen,
-last-seen, active, and acknowledgement audit state. Tutors found after the baseline
-are shown in the Tutors navigation badge, the dashboard alert, and the Tutors tab's
-`New` filter until an administrator acknowledges them.
+canonical active Attendance tutor roster plus tutor identities on current,
+capacity-consuming learner assignments when the app opens, whenever the Tutors tab
+loads, and every five minutes while the app is open. This second source catches a
+new tutor whose Bud learner assignments arrive before their record appears in
+`public.tutors`. Each tutor has a first-seen, last-seen, active, and acknowledgement
+audit state. Tutors found after the baseline are shown in the Tutors navigation
+badge, the dashboard alert, and the Tutors tab's `New` filter until an administrator
+acknowledges them.
 
 Migration `backend/migrations/004_add_tutor_discovery.sql` creates the ledger and its
 singleton baseline marker. Its first successful non-empty scan records the existing
@@ -330,7 +333,10 @@ Capacity database transaction. Administrators can also acknowledge a tutor witho
 changing settings. A genuinely unassigned tutor is excluded from forecast
 calculations until a workstream is assigned; a tutor whose workstream can be inferred
 from learners uses the normal default capacity of 50 but remains visibly flagged for
-review. No discovery or acknowledgement action writes to Attendance.
+review. Source-only tutors can be configured or deactivated in the same way as roster
+tutors. They default to non-delivery with zero effective capacity and do not add
+forecast capacity until an administrator explicitly confirms and saves their Capacity
+Tracker configuration. No discovery or acknowledgement action writes to Attendance.
 
 Administrative writes are protected by Azure Container Apps Easy Auth. The dev
 registration is `Skills4 Capacity Tracker Dev` (application ID

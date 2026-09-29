@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from datetime import date
 
 from .adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from .adapters.capacity import (
@@ -9,6 +10,7 @@ from .adapters.capacity import (
     TutorSettingRecord,
     TutorStatusRecord,
 )
+from .models import CAPACITY_CONSUMING_STATUSES
 
 
 INTERNAL_TUTOR_ID_PREFIX = "attendance-internal:"
@@ -94,6 +96,53 @@ def build_tutor_identity_map(
         canonical_by_id=canonical_by_id,
         canonical_by_name=canonical_by_name,
         canonical_name_by_id=canonical_name_by_id,
+    )
+
+
+def build_tutor_discovery_roster(
+    *,
+    tutors: list[AttendanceTutorRecord],
+    learners: list[AttendanceLearnerRecord],
+    as_of_date: date,
+    aliases: list[TutorIdentityAliasRecord] | None = None,
+) -> list[AttendanceTutorRecord]:
+    """Include current learner-assigned identities missing from the tutor directory.
+
+    Attendance's tutor directory is the primary roster. The learner feed can,
+    however, contain a newly assigned tutor before that identity is present in
+    ``public.tutors``. Those identities must be surfaced for administrator review
+    instead of being silently omitted from discovery and the tutor panel.
+    """
+    identities = build_tutor_identity_map(tutors, aliases)
+    roster_by_id = {tutor.tutor_id: tutor for tutor in identities.tutors}
+    consuming_statuses = {status.value for status in CAPACITY_CONSUMING_STATUSES}
+
+    for learner in learners:
+        if (
+            not learner.tutor_id
+            or not normalise_tutor_name(learner.tutor_name)
+            or learner.status_desc not in consuming_statuses
+            or (learner.start_date is not None and learner.start_date > as_of_date)
+            or (
+                learner.expected_end_date is not None
+                and learner.expected_end_date < as_of_date
+            )
+        ):
+            continue
+        tutor_id = identities.resolve(learner.tutor_id, learner.tutor_name)
+        if not tutor_id:
+            continue
+        roster_by_id.setdefault(
+            tutor_id,
+            AttendanceTutorRecord(
+                tutor_id=tutor_id,
+                tutor_name=" ".join((learner.tutor_name or "").split()),
+            ),
+        )
+
+    return sorted(
+        roster_by_id.values(),
+        key=lambda tutor: (normalise_tutor_name(tutor.tutor_name), tutor.tutor_id),
     )
 
 
