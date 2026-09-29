@@ -73,8 +73,10 @@ def build_live_request(
     pipeline_learners: list[PipelineLearner],
     tutor_statuses: list[TutorStatusRecord] | None = None,
     tutor_aliases: list[TutorIdentityAliasRecord] | None = None,
+    active_cohort_counts: dict[str, int] | None = None,
     history_months: int = 0,
 ) -> ForecastRequest:
+    active_cohort_counts = active_cohort_counts or {}
     tutor_statuses = consolidate_tutor_statuses(
         tutors=attendance_tutors,
         statuses=tutor_statuses or [],
@@ -109,6 +111,7 @@ def build_live_request(
                     tutor_id=tutor_id,
                     tutor_name=setting.tutor_name or directory_record.tutor_name,
                     workstream=setting.workstream,
+                    active_cohorts=active_cohort_counts.get(tutor_id, 0),
                     capacity=(
                         0
                         if setting.on_maternity_leave
@@ -130,6 +133,7 @@ def build_live_request(
                     tutor_id=tutor_id,
                     tutor_name=directory_record.tutor_name,
                     workstream=workstream,
+                    active_cohorts=active_cohort_counts.get(tutor_id, 0),
                 )
             )
 
@@ -146,6 +150,7 @@ def build_live_request(
                     tutor_id=setting.tutor_id,
                     tutor_name=setting.tutor_name,
                     workstream=setting.workstream,
+                    active_cohorts=active_cohort_counts.get(setting.tutor_id, 0),
                     capacity=(
                         0
                         if setting.on_maternity_leave

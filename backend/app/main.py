@@ -358,11 +358,17 @@ def live_forecast() -> ForecastResponse:
         with attendance_connection(settings) as attendance:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
+            active_cohort_counts = fetch_active_cohort_counts(attendance, date.today())
         with capacity_connection(settings) as capacity:
             tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
                 capacity, date.today()
             )
             tutor_aliases = fetch_tutor_identity_aliases(capacity)
+            active_cohort_counts = consolidate_tutor_counts(
+                counts=active_cohort_counts,
+                tutors=tutors,
+                aliases=tutor_aliases,
+            )
         request = build_live_request(
             as_of_date=date.today(),
             months=settings.forecast_months,
@@ -374,6 +380,7 @@ def live_forecast() -> ForecastResponse:
             pipeline_learners=pipeline,
             tutor_statuses=tutor_statuses,
             tutor_aliases=tutor_aliases,
+            active_cohort_counts=active_cohort_counts,
         )
         return build_forecast(request)
     except Exception:

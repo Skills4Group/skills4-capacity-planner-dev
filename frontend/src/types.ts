@@ -19,6 +19,7 @@ export interface TutorMonth {
   tutor_name: string
   workstream: Workstream
   capacity: number
+  active_cohorts: number
   opening_caseload: number
   existing_starts: number
   forecast_starts: number

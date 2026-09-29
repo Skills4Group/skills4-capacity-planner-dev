@@ -37,6 +37,7 @@ export function createDemoForecast(): ForecastResponse {
         tutor_name: name,
         workstream,
         capacity,
+        active_cohorts: 0,
         opening_caseload: opening,
         existing_starts: 0,
         forecast_starts: forecastStarts,

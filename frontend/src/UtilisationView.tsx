@@ -133,6 +133,7 @@ export function UtilisationView({
                 <th className="sticky-workstream" rowSpan={2}>Subject</th>
                 <th rowSpan={2}>Capacity</th>
                 <th rowSpan={2}>Starting</th>
+                <th rowSpan={2}>Active cohorts</th>
                 {months.map((month) => (
                   <th key={month} colSpan={2} className="month-group">{formatMonth(month)}</th>
                 ))}
@@ -150,6 +151,7 @@ export function UtilisationView({
                   <td className="sticky-workstream"><span className="utilisation-subject">{tutor.workstream}</span></td>
                   <td className="numeric">{tutor.capacity}</td>
                   <td className="numeric">{tutor.opening_caseload}</td>
+                  <td className="numeric">{tutor.active_cohorts}</td>
                   {months.map((month) => {
                     const row = rowByTutorAndMonth.get(`${tutor.tutor_id}:${tutor.workstream}:${month}`)
                     const caseload = row?.peak_caseload ?? 0

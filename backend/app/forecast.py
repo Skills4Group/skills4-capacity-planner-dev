@@ -265,6 +265,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     tutor_name=tutor.tutor_name,
                     workstream=tutor_workstream,
                     capacity=monthly_capacity,
+                    active_cohorts=tutor.active_cohorts,
                     opening_caseload=opening,
                     existing_starts=existing_starts,
                     forecast_starts=forecast_starts,

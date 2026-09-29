@@ -48,6 +48,26 @@ def test_capacity_setting_overrides_inferred_stream_and_default_capacity() -> No
     assert request.existing_learners[0].tutor_id == "T1"
 
 
+def test_active_cohort_count_is_exposed_on_forecast_tutor_rows() -> None:
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=1,
+        attendance_learners=[learner("T1", "Pharmacy Services")],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord("T1", "Tutor One", Workstream.PHARMACY, 50)
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+        active_cohort_counts={"T1": 7},
+    )
+
+    forecast = build_forecast(request)
+
+    assert request.tutors[0].active_cohorts == 7
+    assert forecast.tutor_months[0].active_cohorts == 7
+
+
 def test_maternity_leave_preserves_setting_but_removes_forecast_capacity() -> None:
     request = build_live_request(
         as_of_date=date(2026, 8, 11),
