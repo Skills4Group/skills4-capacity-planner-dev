@@ -39,6 +39,14 @@ def resolve_programme_code(
         return by_name[key]
 
     if workstream == Workstream.PHARMACY or "pharmacy" in key:
+        # BUD's live programme titles describe the standard rather than its
+        # apprenticeship level. Pharmacy Services Assistant is the Level 2
+        # family and Pharmacy Technician is the Level 3 family, including
+        # versioned, WSL and commercial-route variants.
+        if "pharmacy services assistant" in key:
+            return "pharmacy-l2"
+        if "pharmacy technician" in key:
+            return "pharmacy-l3"
         if re.search(r"(?:\blevel\s*2\b|\blvl\s*2\b|\bl2\b)", key):
             return "pharmacy-l2"
         if re.search(r"(?:\blevel\s*3\b|\blvl\s*3\b|\bl3\b)", key):
