@@ -70,6 +70,7 @@ class ExistingLearner(BaseModel):
     expected_end_date: date
     status: LearnerStatus
     workstream: Workstream | None = None
+    programme_code: str | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "ExistingLearner":
@@ -85,6 +86,7 @@ class UnallocatedExistingLearner(BaseModel):
     start_date: date
     expected_end_date: date
     status: LearnerStatus
+    programme_code: str | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "UnallocatedExistingLearner":
@@ -99,6 +101,7 @@ class PipelineLearner(BaseModel):
     workstream: Workstream
     start_date: date
     expected_end_date: date
+    programme_code: str | None = None
 
     @model_validator(mode="after")
     def validate_dates(self) -> "PipelineLearner":
@@ -136,6 +139,11 @@ class TutorMonth(BaseModel):
     utilisation_percent: float
 
 
+class TutorProgrammeMonth(TutorMonth):
+    programme_code: str
+    programme_name: str
+
+
 class WorkstreamMonth(BaseModel):
     month: date
     workstream: Workstream
@@ -150,11 +158,17 @@ class WorkstreamMonth(BaseModel):
     additional_tutors_required: int
 
 
+class ProgrammeMonth(WorkstreamMonth):
+    programme_code: str
+    programme_name: str
+
+
 class UnallocatedLearner(BaseModel):
     learner_id: str
     workstream: Workstream
     start_date: date
     expected_end_date: date
+    programme_code: str | None = None
 
 
 class ForecastResponse(BaseModel):
@@ -162,6 +176,8 @@ class ForecastResponse(BaseModel):
     months: list[date]
     tutor_months: list[TutorMonth]
     workstream_months: list[WorkstreamMonth]
+    tutor_programme_months: list[TutorProgrammeMonth] = Field(default_factory=list)
+    programme_months: list[ProgrammeMonth] = Field(default_factory=list)
     unallocated_learners: list[UnallocatedLearner]
 
 
@@ -183,6 +199,11 @@ class PredictiveWorkstreamMonth(BaseModel):
     additional_tutors_p90: int
 
 
+class PredictiveProgrammeMonth(PredictiveWorkstreamMonth):
+    programme_code: str
+    programme_name: str
+
+
 class PredictiveWorkstreamSummary(BaseModel):
     workstream: Workstream
     historical_starts: int
@@ -202,6 +223,11 @@ class PredictiveWorkstreamSummary(BaseModel):
     first_shortage_month_p90: date | None = None
 
 
+class PredictiveProgrammeSummary(PredictiveWorkstreamSummary):
+    programme_code: str
+    programme_name: str
+
+
 class PredictiveForecastResponse(BaseModel):
     generated_at: date
     months: list[date]
@@ -211,6 +237,8 @@ class PredictiveForecastResponse(BaseModel):
     data_warnings: list[str]
     workstream_months: list[PredictiveWorkstreamMonth]
     workstream_summaries: list[PredictiveWorkstreamSummary]
+    programme_months: list[PredictiveProgrammeMonth] = Field(default_factory=list)
+    programme_summaries: list[PredictiveProgrammeSummary] = Field(default_factory=list)
 
 
 class SessionResponse(BaseModel):

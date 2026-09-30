@@ -72,11 +72,24 @@ export function createDemoForecast(): ForecastResponse {
     }),
   )
 
+  const tutorProgrammeMonths = tutorMonths.map((row) => ({
+    ...row,
+    programme_code: `${row.workstream.toLowerCase()}-general`,
+    programme_name: `${row.workstream} (general)`,
+  }))
+  const programmeMonths = workstreamMonths.map((row) => ({
+    ...row,
+    programme_code: `${row.workstream.toLowerCase()}-general`,
+    programme_name: `${row.workstream} (general)`,
+  }))
+
   return {
     generated_at: '2026-08-11',
     months,
     tutor_months: tutorMonths,
     workstream_months: workstreamMonths,
+    tutor_programme_months: tutorProgrammeMonths,
+    programme_months: programmeMonths,
     unallocated_learners: [],
   }
 }

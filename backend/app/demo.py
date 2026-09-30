@@ -7,6 +7,7 @@ from .models import (
     ForecastRequest,
     LearnerStatus,
     PipelineLearner,
+    ProgrammePlanningRecord,
     Tutor,
     Workstream,
 )
@@ -40,6 +41,32 @@ PROGRAMMES = {
     Workstream.BUSINESS: "Business Administrator",
     Workstream.OPERATIONS: "Operations or Departmental Manager",
 }
+
+DEMO_PROGRAMME_PLANS = [
+    ProgrammePlanningRecord(
+        programme_code="pharmacy-general",
+        display_name="Pharmacy (general)",
+        workstream=Workstream.PHARMACY,
+        duration_months=18,
+        active=True,
+    ),
+    ProgrammePlanningRecord(
+        programme_code="pharmacy-l2",
+        display_name="Pharmacy L2",
+        workstream=Workstream.PHARMACY,
+        level="L2",
+        duration_months=15,
+        active=True,
+    ),
+    ProgrammePlanningRecord(
+        programme_code="pharmacy-l3",
+        display_name="Pharmacy L3",
+        workstream=Workstream.PHARMACY,
+        level="L3",
+        duration_months=18,
+        active=True,
+    ),
+]
 
 
 def demo_request(as_of: date = date(2026, 8, 11)) -> ForecastRequest:
@@ -117,4 +144,5 @@ def build_demo_predictive_forecast():
         attendance_learners=attendance_records,
         forecast_request=request,
         programme_mappings={},
+        programmes=DEMO_PROGRAMME_PLANS,
     )

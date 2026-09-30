@@ -3,6 +3,7 @@ import type {
   PredictiveWorkstreamMonth,
   Workstream,
 } from './types.ts'
+import type { ReportingScope } from './reportingFilters.ts'
 
 export const NEW_TUTOR_CAPACITY = 50
 
@@ -27,6 +28,7 @@ export interface NormalisedScenarioInput {
 export interface PredictiveScenarioRow {
   month: string
   workstream: Workstream
+  scope: ReportingScope
   baselineStarts: number
   effectiveStarters: number
   startersOverridden: boolean
@@ -45,8 +47,8 @@ export interface PredictiveScenarioRow {
   bilReturnExceedsScenarioBreaks: boolean
 }
 
-export function scenarioKey(workstream: Workstream, month: string) {
-  return `${workstream}:${month}`
+export function scenarioKey(scope: ReportingScope, month: string) {
+  return `${scope}:${month}`
 }
 
 function countValue(value: string | undefined) {
@@ -105,7 +107,10 @@ export function applyPredictiveScenario(
   let scenarioBreakBalance = 0
 
   return ordered.map((row, index) => {
-    const draft = drafts[scenarioKey(row.workstream, row.month)]
+    const scope = (
+      'programme_code' in row ? row.programme_code : row.workstream
+    ) as ReportingScope
+    const draft = drafts[scenarioKey(scope, row.month)]
     const input = normaliseScenarioDraft(draft)
     const baselineStarts = predictedStartsAtConfidence(row, confidence)
     const effectiveStarters = input.starters ?? baselineStarts
@@ -135,6 +140,7 @@ export function applyPredictiveScenario(
     return {
       month: row.month,
       workstream: row.workstream,
+      scope,
       baselineStarts,
       effectiveStarters,
       startersOverridden: input.starters !== null,

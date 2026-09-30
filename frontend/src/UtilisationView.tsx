@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { selectRollingMonths } from './rollingMonths'
-import { reportingWorkstreams, type ForecastResponse, type Workstream } from './types'
+import { type ForecastResponse, type TutorMonth, type TutorProgrammeMonth } from './types'
+import {
+  isProgrammeFilter,
+  reportingFilterLabels,
+  reportingFilterOptions,
+  type ReportingFilter,
+} from './reportingFilters'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -18,10 +24,14 @@ function formatGap(gap: number) {
   return '0'
 }
 
+function tutorSubject(row: TutorMonth | TutorProgrammeMonth) {
+  return 'programme_name' in row ? row.programme_name : row.workstream
+}
+
 interface UtilisationViewProps {
   forecast: ForecastResponse
-  selectedWorkstream: Workstream | 'All'
-  onWorkstreamChange: (workstream: Workstream | 'All') => void
+  selectedWorkstream: ReportingFilter
+  onWorkstreamChange: (workstream: ReportingFilter) => void
 }
 
 export function UtilisationView({
@@ -34,26 +44,35 @@ export function UtilisationView({
   const gridScrollRef = useRef<HTMLDivElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
   const months = selectRollingMonths(forecast.months, horizon)
+  const forecastRows = useMemo(() => (
+    isProgrammeFilter(selectedWorkstream)
+      ? forecast.tutor_programme_months.filter(
+        (row) => row.programme_code === selectedWorkstream,
+      )
+      : forecast.tutor_months
+  ), [forecast.tutor_months, forecast.tutor_programme_months, selectedWorkstream])
 
   const tutors = useMemo(() => {
     const firstMonth = months[0]
-    return forecast.tutor_months
+    return forecastRows
       .filter(
         (row) =>
           row.month === firstMonth &&
-          (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
+          (selectedWorkstream === 'All'
+            || isProgrammeFilter(selectedWorkstream)
+            || row.workstream === selectedWorkstream),
       )
       .sort((left, right) =>
         left.workstream.localeCompare(right.workstream) || left.tutor_name.localeCompare(right.tutor_name),
       )
-  }, [forecast.tutor_months, months, selectedWorkstream])
+  }, [forecastRows, months, selectedWorkstream])
 
   const rowByTutorAndMonth = useMemo(
     () =>
       new Map(
-        forecast.tutor_months.map((row) => [`${row.tutor_id}:${row.workstream}:${row.month}`, row]),
+        forecastRows.map((row) => [`${row.tutor_id}:${row.workstream}:${row.month}`, row]),
       ),
-    [forecast.tutor_months],
+    [forecastRows],
   )
 
   useEffect(() => {
@@ -92,11 +111,10 @@ export function UtilisationView({
             <select
               id="utilisation-workstream"
               value={selectedWorkstream}
-              onChange={(event) => onWorkstreamChange(event.target.value as Workstream | 'All')}
+              onChange={(event) => onWorkstreamChange(event.target.value as ReportingFilter)}
             >
-              <option value="All">All subjects</option>
-              {reportingWorkstreams.map((workstream) => (
-                <option key={workstream} value={workstream}>{workstream}</option>
+              {reportingFilterOptions.map((filter) => (
+                <option key={filter} value={filter}>{reportingFilterLabels[filter]}</option>
               ))}
             </select>
           </label>
@@ -148,7 +166,7 @@ export function UtilisationView({
               {tutors.map((tutor) => (
                 <tr key={`${tutor.tutor_id}:${tutor.workstream}`}>
                   <td className="sticky-tutor"><strong>{tutor.tutor_name}</strong><small>{tutor.tutor_id}</small></td>
-                  <td className="sticky-workstream"><span className="utilisation-subject">{tutor.workstream}</span></td>
+                  <td className="sticky-workstream"><span className="utilisation-subject">{tutorSubject(tutor)}</span></td>
                   <td className="numeric">{tutor.capacity}</td>
                   <td className="numeric">{tutor.opening_caseload}</td>
                   <td className="numeric">{tutor.active_cohorts}</td>

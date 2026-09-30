@@ -386,9 +386,10 @@ main {
 
 .workstream-strip {
   display: grid;
-  grid-template-columns: 1.2fr repeat(5, minmax(0, 1fr));
+  grid-template-columns: 1.2fr repeat(8, minmax(125px, 1fr));
   gap: 9px;
   margin-bottom: 20px;
+  overflow-x: auto;
 }
 
 .workstream-strip button {

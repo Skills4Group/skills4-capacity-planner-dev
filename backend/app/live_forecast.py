@@ -14,10 +14,12 @@ from .models import (
     ForecastRequest,
     LearnerStatus,
     PipelineLearner,
+    ProgrammePlanningRecord,
     Tutor,
     UnallocatedExistingLearner,
     Workstream,
 )
+from .programme_classification import resolve_programme_code
 from .tutor_identity import consolidate_tutor_inputs, consolidate_tutor_statuses
 
 
@@ -74,6 +76,8 @@ def build_live_request(
     tutor_statuses: list[TutorStatusRecord] | None = None,
     tutor_aliases: list[TutorIdentityAliasRecord] | None = None,
     active_cohort_counts: dict[str, int] | None = None,
+    programmes: list[ProgrammePlanningRecord] | None = None,
+    programme_aliases: dict[str, str] | None = None,
     history_months: int = 0,
 ) -> ForecastRequest:
     active_cohort_counts = active_cohort_counts or {}
@@ -178,6 +182,16 @@ def build_live_request(
             or record.status_desc not in valid_statuses
         ):
             continue
+        learner_workstream = (
+            map_programme(record.programme_name, programme_mappings)
+            or inferred.get(record.tutor_id)
+        )
+        programme_code = resolve_programme_code(
+            record.programme_name,
+            workstream=learner_workstream,
+            programmes=programmes,
+            aliases=programme_aliases,
+        )
         if record.tutor_id in valid_tutor_ids:
             existing_learners.append(
                 ExistingLearner(
@@ -187,10 +201,8 @@ def build_live_request(
                     start_date=record.start_date,
                     expected_end_date=record.expected_end_date,
                     status=valid_statuses[record.status_desc],
-                    workstream=(
-                        map_programme(record.programme_name, programme_mappings)
-                        or inferred.get(record.tutor_id)
-                    ),
+                    workstream=learner_workstream,
+                    programme_code=programme_code,
                 )
             )
             continue
@@ -200,8 +212,7 @@ def build_live_request(
         workstream = (
             setting.workstream
             if setting
-            else map_programme(record.programme_name, programme_mappings)
-            or inferred.get(record.tutor_id)
+            else learner_workstream
         )
         if workstream is None:
             continue
@@ -213,8 +224,28 @@ def build_live_request(
                 start_date=record.start_date,
                 expected_end_date=record.expected_end_date,
                 status=valid_statuses[record.status_desc],
+                programme_code=resolve_programme_code(
+                    record.programme_name,
+                    workstream=workstream,
+                    programmes=programmes,
+                    aliases=programme_aliases,
+                ),
             )
         )
+
+    classified_pipeline = [
+        learner.model_copy(
+            update={
+                "programme_code": resolve_programme_code(
+                    learner.programme_name,
+                    workstream=learner.workstream,
+                    programmes=programmes,
+                    aliases=programme_aliases,
+                )
+            }
+        )
+        for learner in pipeline_learners
+    ]
 
     return ForecastRequest(
         as_of_date=as_of_date,
@@ -222,6 +253,6 @@ def build_live_request(
         history_months=history_months,
         tutors=sorted(tutors, key=lambda tutor: (tutor.workstream, tutor.tutor_name)),
         existing_learners=existing_learners,
-        pipeline_learners=pipeline_learners,
+        pipeline_learners=classified_pipeline,
         unallocated_existing_learners=unallocated_existing_learners,
     )

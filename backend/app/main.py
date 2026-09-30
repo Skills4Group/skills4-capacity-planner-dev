@@ -64,6 +64,7 @@ from .models import (
 from .predictive_forecast import build_predictive_forecast
 from .programme_planning import (
     academic_year_for,
+    fetch_programme_aliases,
     fetch_programme_planning,
     save_planned_cohort,
     save_programme_setting,
@@ -369,6 +370,10 @@ def live_forecast() -> ForecastResponse:
                 tutors=tutors,
                 aliases=tutor_aliases,
             )
+            programmes, _ = fetch_programme_planning(
+                capacity, academic_year_for(date.today())
+            )
+            programme_aliases = fetch_programme_aliases(capacity)
         request = build_live_request(
             as_of_date=date.today(),
             months=settings.forecast_months,
@@ -381,6 +386,8 @@ def live_forecast() -> ForecastResponse:
             tutor_statuses=tutor_statuses,
             tutor_aliases=tutor_aliases,
             active_cohort_counts=active_cohort_counts,
+            programmes=programmes,
+            programme_aliases=programme_aliases,
         )
         return build_forecast(request)
     except Exception:
@@ -418,6 +425,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
                 if not programmes:
                     programmes = year_programmes
                 planned_cohorts.extend(year_cohorts)
+            programme_aliases = fetch_programme_aliases(capacity)
         request = build_live_request(
             as_of_date=as_of_date,
             months=settings.forecast_months,
@@ -428,6 +436,8 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             pipeline_learners=pipeline,
             tutor_statuses=tutor_statuses,
             tutor_aliases=tutor_aliases,
+            programmes=programmes,
+            programme_aliases=programme_aliases,
         )
         return build_predictive_forecast(
             as_of_date=as_of_date,
@@ -437,6 +447,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             programme_mappings=mappings,
             programmes=programmes,
             planned_cohorts=planned_cohorts,
+            programme_aliases=programme_aliases,
         )
     except Exception:
         logger.exception("Predictive forecast generation failed")

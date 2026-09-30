@@ -30,6 +30,11 @@ export interface TutorMonth {
   utilisation_percent: number
 }
 
+export interface TutorProgrammeMonth extends TutorMonth {
+  programme_code: string
+  programme_name: string
+}
+
 export interface WorkstreamMonth {
   month: string
   workstream: Workstream
@@ -44,11 +49,18 @@ export interface WorkstreamMonth {
   additional_tutors_required: number
 }
 
+export interface ProgrammeMonth extends WorkstreamMonth {
+  programme_code: string
+  programme_name: string
+}
+
 export interface ForecastResponse {
   generated_at: string
   months: string[]
   tutor_months: TutorMonth[]
   workstream_months: WorkstreamMonth[]
+  tutor_programme_months: TutorProgrammeMonth[]
+  programme_months: ProgrammeMonth[]
   unallocated_learners: Array<{
     learner_id: string
     workstream: Workstream
@@ -77,6 +89,11 @@ export interface PredictiveWorkstreamMonth {
   additional_tutors_p90: number
 }
 
+export interface PredictiveProgrammeMonth extends PredictiveWorkstreamMonth {
+  programme_code: string
+  programme_name: string
+}
+
 export interface PredictiveWorkstreamSummary {
   workstream: Workstream
   historical_starts: number
@@ -96,6 +113,11 @@ export interface PredictiveWorkstreamSummary {
   first_shortage_month_p90: string | null
 }
 
+export interface PredictiveProgrammeSummary extends PredictiveWorkstreamSummary {
+  programme_code: string
+  programme_name: string
+}
+
 export interface PredictiveForecastResponse {
   generated_at: string
   months: string[]
@@ -105,6 +127,8 @@ export interface PredictiveForecastResponse {
   data_warnings: string[]
   workstream_months: PredictiveWorkstreamMonth[]
   workstream_summaries: PredictiveWorkstreamSummary[]
+  programme_months: PredictiveProgrammeMonth[]
+  programme_summaries: PredictiveProgrammeSummary[]
 }
 
 export interface TutorAdminRecord {

@@ -8,13 +8,22 @@ import {
   type ScenarioField,
 } from './predictiveScenario'
 import {
-  reportingWorkstreams,
   type PredictiveConfidence,
   type PredictiveForecastResponse,
+  type PredictiveProgrammeSummary,
   type PredictiveWorkstreamSummary,
-  type Workstream,
 } from './types'
 import { ProgrammePlanningPanel } from './ProgrammePlanningPanel'
+import {
+  isProgrammeFilter,
+  pharmacyProgrammeFilters,
+  reportingFilterLabels,
+  reportingFilterOptions,
+  reportingScopeOptions,
+  type ReportingFilter,
+  type ReportingScope,
+} from './reportingFilters'
+import { reportingWorkstreams } from './types'
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -60,8 +69,8 @@ function signed(value: number) {
 }
 
 interface PredictiveForecastViewProps {
-  selectedWorkstream: Workstream | 'All'
-  onWorkstreamChange: (workstream: Workstream | 'All') => void
+  selectedWorkstream: ReportingFilter
+  onWorkstreamChange: (workstream: ReportingFilter) => void
 }
 
 export function PredictiveForecastView({
@@ -74,7 +83,7 @@ export function PredictiveForecastView({
   const [source, setSource] = useState<'live' | 'demo'>('live')
   const [error, setError] = useState('')
   const [scenarioOpen, setScenarioOpen] = useState(false)
-  const [scenarioWorkstream, setScenarioWorkstream] = useState<Workstream>('Pharmacy')
+  const [scenarioWorkstream, setScenarioWorkstream] = useState<ReportingScope>('pharmacy-general')
   const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDrafts>({})
 
   const loadForecast = useCallback(async () => {
@@ -106,19 +115,27 @@ export function PredictiveForecastView({
   }, [selectedWorkstream])
 
   const months = useMemo(() => forecast?.months.slice(0, horizon) ?? [], [forecast, horizon])
-  const selectedStreams = useMemo(
-    () => reportingWorkstreams.filter(
-      (workstream) => selectedWorkstream === 'All' || workstream === selectedWorkstream,
-    ),
+  const selectedStreams = useMemo<ReportingScope[]>(
+    () => selectedWorkstream === 'All' ? reportingWorkstreams : [selectedWorkstream],
     [selectedWorkstream],
   )
   const summaries = useMemo(
-    () => forecast?.workstream_summaries.filter((row) => selectedStreams.includes(row.workstream)) ?? [],
-    [forecast, selectedStreams],
+    (): Array<PredictiveWorkstreamSummary | PredictiveProgrammeSummary> => {
+      if (!forecast) return []
+      if (isProgrammeFilter(selectedWorkstream)) {
+        return forecast.programme_summaries.filter(
+          (row) => row.programme_code === selectedWorkstream,
+        )
+      }
+      return forecast.workstream_summaries.filter(
+        (row) => selectedStreams.includes(row.workstream),
+      )
+    },
+    [forecast, selectedStreams, selectedWorkstream],
   )
   const scenarioRows = useMemo(() => {
     if (!forecast) return []
-    return reportingWorkstreams.flatMap((workstream) => {
+    const workstreamRows = reportingWorkstreams.flatMap((workstream) => {
       const duration = forecast.workstream_summaries.find(
         (summary) => summary.workstream === workstream,
       )?.median_duration_months ?? 18
@@ -129,26 +146,46 @@ export function PredictiveForecastView({
         scenarioDrafts,
       )
     })
+    const programmeRows = pharmacyProgrammeFilters.flatMap((programmeCode) => {
+      const duration = forecast.programme_summaries.find(
+        (summary) => summary.programme_code === programmeCode,
+      )?.median_duration_months ?? 18
+      return applyPredictiveScenario(
+        forecast.programme_months.filter(
+          (row) => row.programme_code === programmeCode,
+        ),
+        duration,
+        confidence,
+        scenarioDrafts,
+      )
+    })
+    return [...workstreamRows, ...programmeRows]
   }, [confidence, forecast, scenarioDrafts])
   const scenarioRowsByKey = useMemo(
-    () => new Map(scenarioRows.map((row) => [scenarioKey(row.workstream, row.month), row])),
+    () => new Map(scenarioRows.map((row) => [scenarioKey(row.scope, row.month), row])),
     [scenarioRows],
   )
   const scenarioCount = Object.values(scenarioDrafts).filter(draftHasValues).length
   const selectedScenarioCount = Object.entries(scenarioDrafts).filter(([key, draft]) => (
     draftHasValues(draft)
-    && selectedStreams.some((workstream) => key.startsWith(`${workstream}:`))
+    && selectedStreams.some((scope) => key.startsWith(`${scope}:`))
   )).length
   const visibleScenarioRows = months.map(
     (month) => scenarioRowsByKey.get(scenarioKey(scenarioWorkstream, month)),
   ).filter((row): row is PredictiveScenarioRow => Boolean(row))
 
   const monthly = useMemo(() => months.map((month) => {
-    const sourceRows = forecast?.workstream_months.filter(
-      (row) => row.month === month && selectedStreams.includes(row.workstream),
-    ) ?? []
+    const sourceRows = !forecast
+      ? []
+      : isProgrammeFilter(selectedWorkstream)
+        ? forecast.programme_months.filter(
+          (row) => row.month === month && row.programme_code === selectedWorkstream,
+        )
+        : forecast.workstream_months.filter(
+          (row) => row.month === month && selectedStreams.includes(row.workstream),
+        )
     const modeledRows = selectedStreams.map(
-      (workstream) => scenarioRowsByKey.get(scenarioKey(workstream, month)),
+      (scope) => scenarioRowsByKey.get(scenarioKey(scope, month)),
     ).filter((row): row is PredictiveScenarioRow => Boolean(row))
     return {
       month,
@@ -163,10 +200,10 @@ export function PredictiveForecastView({
       tutors: modeledRows.reduce((sum, row) => sum + row.additionalTutors, 0),
       hasAdjustment: modeledRows.some((row) => row.hasAdjustment),
     }
-  }), [forecast, months, scenarioRowsByKey, selectedStreams])
+  }), [forecast, months, scenarioRowsByKey, selectedStreams, selectedWorkstream])
 
   function updateScenarioField(
-    workstream: Workstream,
+    workstream: ReportingScope,
     month: string,
     field: ScenarioField,
     value: string,
@@ -184,7 +221,7 @@ export function PredictiveForecastView({
     })
   }
 
-  function resetScenarioRow(workstream: Workstream, month: string) {
+  function resetScenarioRow(workstream: ReportingScope, month: string) {
     const key = scenarioKey(workstream, month)
     setScenarioDrafts((current) => {
       const next = { ...current }
@@ -193,7 +230,7 @@ export function PredictiveForecastView({
     })
   }
 
-  function resetScenarioWorkstream(workstream: Workstream) {
+  function resetScenarioWorkstream(workstream: ReportingScope) {
     setScenarioDrafts((current) => Object.fromEntries(
       Object.entries(current).filter(([key]) => !key.startsWith(`${workstream}:`)),
     ))
@@ -220,9 +257,12 @@ export function PredictiveForecastView({
     (row) => row.bilReturns > 0 && row.bilReturnExceedsScenarioBreaks,
   )
 
-  function workstreamScenario(summary: PredictiveWorkstreamSummary) {
+  function workstreamScenario(summary: PredictiveWorkstreamSummary | PredictiveProgrammeSummary) {
+    const scope = (
+      'programme_code' in summary ? summary.programme_code : summary.workstream
+    ) as ReportingScope
     const rows = months.map(
-      (month) => scenarioRowsByKey.get(scenarioKey(summary.workstream, month)),
+      (month) => scenarioRowsByKey.get(scenarioKey(scope, month)),
     ).filter((row): row is PredictiveScenarioRow => Boolean(row))
     return {
       peakActive: Math.max(...rows.map((row) => row.revisedActive), 0),
@@ -239,7 +279,7 @@ export function PredictiveForecastView({
           <p className="page-intro">Estimate learner demand and the month additional tutors may be required.</p>
         </div>
         <div className="predictive-filters">
-          <label><span>Workstream</span><select value={selectedWorkstream} onChange={(event) => onWorkstreamChange(event.target.value as Workstream | 'All')}><option value="All">All workstreams</option>{reportingWorkstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></label>
+          <label><span>Workstream / programme</span><select value={selectedWorkstream} onChange={(event) => onWorkstreamChange(event.target.value as ReportingFilter)}>{reportingFilterOptions.map((filter) => <option key={filter} value={filter}>{reportingFilterLabels[filter]}</option>)}</select></label>
           <label><span>Planning range</span><select value={confidence} onChange={(event) => setConfidence(event.target.value as PredictiveConfidence)}><option value="p50">P50 — expected</option><option value="p80">P80 — prudent</option><option value="p90">P90 — cautious</option></select></label>
           <label><span>Horizon</span><select value={horizon} onChange={(event) => setHorizon(Number(event.target.value) as 6 | 12 | 18)}><option value={6}>6 months</option><option value={12}>12 months</option><option value={18}>18 months</option></select></label>
           <button className={`predictive-scenario-toggle ${scenarioOpen ? 'active' : ''}`} onClick={() => setScenarioOpen((open) => !open)}><span>{scenarioOpen ? 'Hide inputs' : 'Model scenario'}</span><small>{scenarioCount ? `${scenarioCount} adjusted month${scenarioCount === 1 ? '' : 's'}` : 'Manual monthly movements'}</small></button>
@@ -258,8 +298,8 @@ export function PredictiveForecastView({
           <div className="predictive-scenario-heading">
             <div><p className="eyebrow">Manual planning layer</p><h2 id="predictive-scenario-title">Monthly learner movements</h2><p>Blank Starters use the {confidence.toUpperCase()} model; entering zero is an explicit override. Net movement = Starters + BiL returns − BiL − WD − OOF.</p></div>
             <div className="predictive-scenario-actions">
-              <label><span>Editing workstream</span><select value={scenarioWorkstream} onChange={(event) => setScenarioWorkstream(event.target.value as Workstream)}>{reportingWorkstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}</select></label>
-              <button onClick={() => resetScenarioWorkstream(scenarioWorkstream)} disabled={!Object.entries(scenarioDrafts).some(([key, draft]) => key.startsWith(`${scenarioWorkstream}:`) && draftHasValues(draft))}>Reset {scenarioWorkstream}</button>
+              <label><span>Editing workstream / programme</span><select value={scenarioWorkstream} onChange={(event) => setScenarioWorkstream(event.target.value as ReportingScope)}>{reportingScopeOptions.map((scope) => <option key={scope} value={scope}>{reportingFilterLabels[scope]}</option>)}</select></label>
+              <button onClick={() => resetScenarioWorkstream(scenarioWorkstream)} disabled={!Object.entries(scenarioDrafts).some(([key, draft]) => key.startsWith(`${scenarioWorkstream}:`) && draftHasValues(draft))}>Reset {reportingFilterLabels[scenarioWorkstream]}</button>
               <button onClick={() => setScenarioDrafts({})} disabled={!scenarioCount}>Reset all</button>
             </div>
           </div>
@@ -272,7 +312,7 @@ export function PredictiveForecastView({
           <div className="predictive-scenario-table-wrap">
             <table className="predictive-scenario-table">
               <thead><tr><th>Month</th><th>Model starts</th>{scenarioFields.map(({ field, shortLabel }) => <th key={field} title={scenarioFields.find((item) => item.field === field)?.label}>{shortLabel}</th>)}<th>Net movement</th><th>Revised active</th><th>Tutors</th><th><span className="sr-only">Actions</span></th></tr></thead>
-              <tbody>{visibleScenarioRows.map((row) => { const key = scenarioKey(row.workstream, row.month); const draft = scenarioDrafts[key]; return <tr key={row.month} className={`${row.hasAdjustment ? 'adjusted' : ''} ${row.invalidExitAmount > 0 ? 'invalid' : ''}`}><td><strong>{formatMonth(row.month)}</strong>{row.invalidExitAmount > 0 && <small>Exceeds by {row.invalidExitAmount}</small>}{row.bilReturns > 0 && row.bilReturnExceedsScenarioBreaks && <small className="warning">Pre-horizon return?</small>}</td><td><strong>{row.baselineStarts}</strong><small>{confidence.toUpperCase()}</small></td>{scenarioFields.map(({ field, label }) => <td key={field}><input aria-label={`${label} for ${row.workstream} in ${formatMonth(row.month)}`} inputMode="numeric" min="0" step="1" type="number" value={draft?.[field] ?? ''} placeholder={field === 'starters' ? `${row.baselineStarts}` : '0'} onChange={(event) => updateScenarioField(row.workstream, row.month, field, event.target.value)} /></td>)}<td><strong className={row.netMovement < 0 ? 'negative' : 'positive'}>{signed(row.netMovement)}</strong></td><td><strong>{row.revisedActive}</strong><small className={row.variance === 0 ? '' : row.variance < 0 ? 'negative' : 'positive'}>{row.variance === 0 ? 'baseline' : `${signed(row.variance)} vs model`}</small></td><td><span className={`resource-status ${row.additionalTutors > 0 ? 'gap' : 'covered'}`}>{row.additionalTutors > 0 ? `${row.additionalTutors} required` : 'Covered'}</span></td><td><button className="scenario-row-reset" onClick={() => resetScenarioRow(row.workstream, row.month)} disabled={!row.hasAdjustment}>Clear</button></td></tr> })}</tbody>
+              <tbody>{visibleScenarioRows.map((row) => { const key = scenarioKey(row.scope, row.month); const draft = scenarioDrafts[key]; return <tr key={row.month} className={`${row.hasAdjustment ? 'adjusted' : ''} ${row.invalidExitAmount > 0 ? 'invalid' : ''}`}><td><strong>{formatMonth(row.month)}</strong>{row.invalidExitAmount > 0 && <small>Exceeds by {row.invalidExitAmount}</small>}{row.bilReturns > 0 && row.bilReturnExceedsScenarioBreaks && <small className="warning">Pre-horizon return?</small>}</td><td><strong>{row.baselineStarts}</strong><small>{confidence.toUpperCase()}</small></td>{scenarioFields.map(({ field, label }) => <td key={field}><input aria-label={`${label} for ${reportingFilterLabels[row.scope]} in ${formatMonth(row.month)}`} inputMode="numeric" min="0" step="1" type="number" value={draft?.[field] ?? ''} placeholder={field === 'starters' ? `${row.baselineStarts}` : '0'} onChange={(event) => updateScenarioField(row.scope, row.month, field, event.target.value)} /></td>)}<td><strong className={row.netMovement < 0 ? 'negative' : 'positive'}>{signed(row.netMovement)}</strong></td><td><strong>{row.revisedActive}</strong><small className={row.variance === 0 ? '' : row.variance < 0 ? 'negative' : 'positive'}>{row.variance === 0 ? 'baseline' : `${signed(row.variance)} vs model`}</small></td><td><span className={`resource-status ${row.additionalTutors > 0 ? 'gap' : 'covered'}`}>{row.additionalTutors > 0 ? `${row.additionalTutors} required` : 'Covered'}</span></td><td><button className="scenario-row-reset" onClick={() => resetScenarioRow(row.scope, row.month)} disabled={!row.hasAdjustment}>Clear</button></td></tr> })}</tbody>
             </table>
           </div>
           <p className="predictive-scenario-footnote">Scenario entries are kept only in this browser session. They do not update Attendance or the Capacity database.</p>
@@ -280,7 +320,7 @@ export function PredictiveForecastView({
       )}
 
       <section className="forecast-summary-grid predictive-summary" aria-label="Predictive forecast summary">
-        <article><span>Current active learners</span><strong>{currentActive.toLocaleString('en-GB')}</strong><small>{selectedWorkstream === 'All' ? 'reporting workstreams' : selectedWorkstream}</small></article>
+        <article><span>Current active learners</span><strong>{currentActive.toLocaleString('en-GB')}</strong><small>{reportingFilterLabels[selectedWorkstream]}</small></article>
         <article><span>Effective tutor capacity</span><strong>{capacity.toLocaleString('en-GB')}</strong><small>Operations excluded</small></article>
         <article><span>{selectedScenarioCount ? 'Peak scenario learners' : 'Peak predicted learners'}</span><strong>{peakRow.active.toLocaleString('en-GB')}</strong><small>{peakRow.month ? formatMonth(peakRow.month) : 'No forecast months'}</small></article>
         <article className={peakTutors > 0 ? 'attention' : ''}><span>Additional tutors at peak</span><strong>{peakTutors}</strong><small>{firstShortage ? `first needed ${formatMonth(firstShortage.month)}` : 'current team covers forecast'}</small></article>
@@ -296,7 +336,7 @@ export function PredictiveForecastView({
       <section className="predictive-workstreams">
         <div className="section-heading"><div><p className="eyebrow">Evidence by workstream</p><h2>Model confidence and peak requirement</h2></div></div>
         <div className="predictive-workstream-grid">
-          {summaries.map((row) => { const scenario = workstreamScenario(row); return <article key={row.workstream} data-stream={row.workstream}><div><h3>{row.workstream}</h3><span className={`confidence-pill ${row.data_confidence.toLowerCase()}`}>{row.data_confidence} confidence</span></div><dl><div><dt>Historical starts</dt><dd>{row.historical_starts}</dd></div><div><dt>History used</dt><dd>{row.historical_months} months</dd></div><div><dt>Typical duration</dt><dd>{row.median_duration_months} months</dd></div><div><dt>Peak learners</dt><dd>{scenario.peakActive}</dd></div></dl><p>{scenario.peakTutors > 0 ? `${scenario.peakTutors} additional tutor${scenario.peakTutors > 1 ? 's' : ''} at peak` : 'Current capacity covers the predicted peak'}</p></article> })}
+          {summaries.map((row) => { const scenario = workstreamScenario(row); const scope = 'programme_code' in row ? row.programme_code : row.workstream; const label = 'programme_name' in row ? row.programme_name : row.workstream; return <article key={scope} data-stream={row.workstream}><div><h3>{label}</h3><span className={`confidence-pill ${row.data_confidence.toLowerCase()}`}>{row.data_confidence} confidence</span></div><dl><div><dt>Historical starts</dt><dd>{row.historical_starts}</dd></div><div><dt>History used</dt><dd>{row.historical_months} months</dd></div><div><dt>Typical duration</dt><dd>{row.median_duration_months} months</dd></div><div><dt>Peak learners</dt><dd>{scenario.peakActive}</dd></div></dl><p>{scenario.peakTutors > 0 ? `${scenario.peakTutors} additional tutor${scenario.peakTutors > 1 ? 's' : ''} at peak` : 'Current capacity covers the predicted peak'}</p></article> })}
         </div>
       </section>
 

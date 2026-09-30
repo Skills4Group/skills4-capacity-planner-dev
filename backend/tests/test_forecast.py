@@ -86,7 +86,18 @@ def test_tutor_capacity_can_be_split_across_programmes_and_workstreams() -> None
                 ],
             )
         ],
-        existing_learners=[],
+        existing_learners=[
+            ExistingLearner(
+                learner_id="L3-1",
+                tutor_id="T1",
+                programme_name="Pharmacy L3",
+                programme_code="pharmacy-l3",
+                workstream=Workstream.PHARMACY,
+                start_date=date(2026, 1, 1),
+                expected_end_date=date(2027, 1, 1),
+                status=LearnerStatus.IN_PROGRESS,
+            )
+        ],
         pipeline_learners=[],
     )
 
@@ -109,6 +120,20 @@ def test_tutor_capacity_can_be_split_across_programmes_and_workstreams() -> None
     )
     assert pharmacy.total_capacity == 30
     assert dental.total_capacity == 20
+    pharmacy_l3 = next(
+        row
+        for row in result.programme_months
+        if row.programme_code == "pharmacy-l3"
+    )
+    assert pharmacy_l3.total_capacity == 30
+    assert pharmacy_l3.peak_projected_caseload == 1
+    tutor_l3 = next(
+        row
+        for row in result.tutor_programme_months
+        if row.tutor_id == "T1" and row.programme_code == "pharmacy-l3"
+    )
+    assert tutor_l3.capacity == 30
+    assert tutor_l3.peak_caseload == 1
 
 
 def test_zero_capacity_tutor_is_unavailable_without_division_error() -> None:

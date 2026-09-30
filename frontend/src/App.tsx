@@ -7,7 +7,14 @@ import { SettingsView } from './SettingsView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
 import { defaultForecastMonth, localMonthKey, selectMonthOptions, selectRollingMonths } from './rollingMonths'
-import { reportingWorkstreams, type ForecastResponse, type TutorDiscoverySummary, type TutorMonth, type Workstream } from './types'
+import { type ForecastResponse, type TutorDiscoverySummary, type TutorMonth } from './types'
+import {
+  isProgrammeFilter,
+  reportingFilterLabels,
+  reportingFilterOptions,
+  type ReportingFilter,
+  workstreamForFilter,
+} from './reportingFilters'
 import { calculateWorkstreamUtilisation } from './workstreamUtilisation'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -49,7 +56,7 @@ function App() {
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
   const [selectedMonth, setSelectedMonth] = useState(defaultForecastMonth(demoForecast.months))
-  const [selectedWorkstream, setSelectedWorkstream] = useState<Workstream | 'All'>('All')
+  const [selectedWorkstream, setSelectedWorkstream] = useState<ReportingFilter>('All')
   const [search, setSearch] = useState('')
   const [scenarioOpen, setScenarioOpen] = useState(false)
   const [capacityOverride, setCapacityOverride] = useState(50)
@@ -96,15 +103,20 @@ function App() {
     return () => window.clearInterval(timer)
   }, [refreshTutorDiscovery])
 
-  const monthRows = useMemo(
-    () => forecast.tutor_months.filter((row) => row.month === selectedMonth),
-    [forecast, selectedMonth],
-  )
+  const monthRows = useMemo(() => (
+    isProgrammeFilter(selectedWorkstream)
+      ? forecast.tutor_programme_months.filter(
+        (row) => row.month === selectedMonth && row.programme_code === selectedWorkstream,
+      )
+      : forecast.tutor_months.filter((row) => row.month === selectedMonth)
+  ), [forecast, selectedMonth, selectedWorkstream])
   const visibleRows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return monthRows.filter(
       (row) =>
-        (selectedWorkstream === 'All' || row.workstream === selectedWorkstream) &&
+        (selectedWorkstream === 'All'
+          || isProgrammeFilter(selectedWorkstream)
+          || row.workstream === selectedWorkstream) &&
         (!query || row.tutor_name.toLowerCase().includes(query)),
     )
   }, [monthRows, search, selectedWorkstream])
@@ -130,15 +142,19 @@ function App() {
       required: Math.ceil(Math.max(0, -remaining) / capacityOverride),
     }
   }, [capacityOverride, scenarioRows])
-  const selectedStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
+  const allStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
   const monthOptions = selectMonthOptions(forecast.months)
   const currentMonth = localMonthKey()
   const scenarioTutorCapacity = scenarioOpen ? capacityOverride : undefined
-  const allWorkstreamUtilisation = calculateWorkstreamUtilisation(selectedStreamRows, scenarioTutorCapacity)
+  const allWorkstreamUtilisation = calculateWorkstreamUtilisation(allStreamRows, scenarioTutorCapacity)
   const trendRows = selectRollingMonths(forecast.months, 18).map((month) => {
-    const rows = forecast.workstream_months.filter(
-      (row) => row.month === month && (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
-    )
+    const rows = isProgrammeFilter(selectedWorkstream)
+      ? forecast.programme_months.filter(
+        (row) => row.month === month && row.programme_code === selectedWorkstream,
+      )
+      : forecast.workstream_months.filter(
+        (row) => row.month === month && (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
+      )
     return {
       month,
       capacity: rows.reduce((sum, row) => sum + row.total_capacity, 0),
@@ -244,10 +260,16 @@ function App() {
 
         <section className="workstream-strip" aria-label="Workstream filters">
           <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{allWorkstreamUtilisation.remaining} places</strong><small className={`workstream-utilisation ${allWorkstreamUtilisation.tone}`}>{allWorkstreamUtilisation.label}</small></button>
-          {reportingWorkstreams.map((workstream) => {
-            const row = selectedStreamRows.find((item) => item.workstream === workstream)
+          {reportingFilterOptions.slice(1).map((filter) => {
+            const row = isProgrammeFilter(filter)
+              ? forecast.programme_months.find(
+                (item) => item.month === selectedMonth && item.programme_code === filter,
+              )
+              : forecast.workstream_months.find(
+                (item) => item.month === selectedMonth && item.workstream === filter,
+              )
             const utilisation = calculateWorkstreamUtilisation(row ? [row] : [], scenarioTutorCapacity)
-            return <button key={workstream} data-stream={workstream} className={selectedWorkstream === workstream ? 'active' : ''} onClick={() => setSelectedWorkstream(workstream)}><span>{workstream}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label}</small></button>
+            return <button key={filter} data-stream={workstreamForFilter(filter) ?? undefined} className={selectedWorkstream === filter ? 'active' : ''} onClick={() => setSelectedWorkstream(filter)}><span>{reportingFilterLabels[filter]}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label}</small></button>
           })}
         </section>
 
@@ -265,7 +287,7 @@ function App() {
 
         <section className="tutor-card">
           <div className="section-heading table-heading">
-            <div><p className="eyebrow">Tutor detail</p><h2>{selectedWorkstream === 'All' ? 'All tutors' : `${selectedWorkstream} tutors`}</h2></div>
+            <div><p className="eyebrow">Tutor detail</p><h2>{selectedWorkstream === 'All' ? 'All tutors' : `${reportingFilterLabels[selectedWorkstream]} tutors`}</h2></div>
             <label className="search-field"><span className="sr-only">Search tutors</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tutor" /></label>
           </div>
           <div className="table-wrap">

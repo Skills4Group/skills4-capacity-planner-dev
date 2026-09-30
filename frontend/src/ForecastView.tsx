@@ -3,9 +3,16 @@ import { selectRollingMonths } from './rollingMonths'
 import {
   reportingWorkstreams,
   type ForecastResponse,
-  type Workstream,
+  type ProgrammeMonth,
   type WorkstreamMonth,
 } from './types'
+import {
+  isProgrammeFilter,
+  reportingFilterLabels,
+  reportingFilterOptions,
+  type ReportingFilter,
+  type ReportingScope,
+} from './reportingFilters'
 
 const NEW_TUTOR_CAPACITY = 50
 
@@ -21,18 +28,24 @@ function formatMonth(value: string) {
 
 interface ForecastViewProps {
   forecast: ForecastResponse
-  selectedWorkstream: Workstream | 'All'
-  onWorkstreamChange: (workstream: Workstream | 'All') => void
+  selectedWorkstream: ReportingFilter
+  onWorkstreamChange: (workstream: ReportingFilter) => void
 }
 
 interface HiringEvent {
   month: string
-  workstream: Workstream
+  scope: ReportingScope
   hires: number
 }
 
-function scenarioKey(month: string, workstream: Workstream) {
-  return `${month}:${workstream}`
+type PlanningMonth = WorkstreamMonth | ProgrammeMonth
+
+function rowScope(row: PlanningMonth): ReportingScope {
+  return 'programme_code' in row ? row.programme_code as ReportingScope : row.workstream
+}
+
+function scenarioKey(month: string, scope: ReportingScope) {
+  return `${month}:${scope}`
 }
 
 function scenarioLearnerCount(value: string | undefined, baseline: number) {
@@ -51,16 +64,24 @@ export function ForecastView({
   const [scenarioValues, setScenarioValues] = useState<Record<string, string>>({})
   const months = selectRollingMonths(forecast.months, horizon)
 
-  const selectedStreams = useMemo(
-    () => reportingWorkstreams.filter((workstream) => selectedWorkstream === 'All' || workstream === selectedWorkstream),
+  const selectedStreams = useMemo<ReportingScope[]>(
+    () => selectedWorkstream === 'All'
+      ? reportingWorkstreams
+      : [selectedWorkstream],
     [selectedWorkstream],
   )
 
+  const planningRows = useMemo<PlanningMonth[]>(() => (
+    isProgrammeFilter(selectedWorkstream)
+      ? forecast.programme_months.filter((row) => row.programme_code === selectedWorkstream)
+      : forecast.workstream_months
+  ), [forecast.programme_months, forecast.workstream_months, selectedWorkstream])
+
   const modeledWorkstreamMonths = useMemo(
-    () => forecast.workstream_months.map((row): WorkstreamMonth => {
+    () => planningRows.map((row): PlanningMonth => {
       if (!scenarioEnabled) return row
       const projectedLearners = scenarioLearnerCount(
-        scenarioValues[scenarioKey(row.month, row.workstream)],
+        scenarioValues[scenarioKey(row.month, rowScope(row))],
         row.peak_projected_caseload,
       )
       const remainingCapacity = row.total_capacity - projectedLearners
@@ -76,45 +97,46 @@ export function ForecastView({
         ),
       }
     }),
-    [forecast.workstream_months, scenarioEnabled, scenarioValues],
+    [planningRows, scenarioEnabled, scenarioValues],
   )
 
   const baselineRows = useMemo(
     () => new Map(
-      forecast.workstream_months.map((row) => [scenarioKey(row.month, row.workstream), row]),
+      planningRows.map((row) => [scenarioKey(row.month, rowScope(row)), row]),
     ),
-    [forecast.workstream_months],
+    [planningRows],
   )
 
   const scenarioChangeCount = Object.keys(scenarioValues).length
 
   const resourcePlan = useMemo(() => {
-    const plannedHires = new Map<Workstream, number>()
+    const plannedHires = new Map<ReportingScope, number>()
     const hiringEvents: HiringEvent[] = []
 
     const monthly = months.map((month) => {
       const rows = modeledWorkstreamMonths.filter(
-        (row) => row.month === month && selectedStreams.includes(row.workstream),
+        (row) => row.month === month && selectedStreams.includes(rowScope(row)),
       )
       let hiresThisMonth = 0
       const monthEvents: HiringEvent[] = []
 
       rows.forEach((row) => {
-        const alreadyPlanned = plannedHires.get(row.workstream) ?? 0
+        const scope = rowScope(row)
+        const alreadyPlanned = plannedHires.get(scope) ?? 0
         const newHires = Math.max(0, row.additional_tutors_required - alreadyPlanned)
         if (newHires > 0) {
-          const event = { month, workstream: row.workstream, hires: newHires }
+          const event = { month, scope, hires: newHires }
           monthEvents.push(event)
           hiringEvents.push(event)
           hiresThisMonth += newHires
-          plannedHires.set(row.workstream, alreadyPlanned + newHires)
+          plannedHires.set(scope, alreadyPlanned + newHires)
         }
       })
 
       const currentStaff = rows.reduce((sum, row) => sum + row.tutors, 0)
       const staffRequired = currentStaff + rows.reduce((sum, row) => sum + row.additional_tutors_required, 0)
       const plannedStaff = currentStaff + selectedStreams.reduce(
-        (sum, workstream) => sum + (plannedHires.get(workstream) ?? 0),
+        (sum, scope) => sum + (plannedHires.get(scope) ?? 0),
         0,
       )
       const projectedLearners = rows.reduce((sum, row) => sum + row.peak_projected_caseload, 0)
@@ -157,15 +179,15 @@ export function ForecastView({
   }, [months, resourcePlan])
 
   const workstreamPlans = useMemo(
-    () => selectedStreams.map((workstream) => {
+    () => selectedStreams.map((scope) => {
       const rows = modeledWorkstreamMonths.filter(
-        (row) => months.includes(row.month) && row.workstream === workstream,
+        (row) => months.includes(row.month) && rowScope(row) === scope,
       )
-      const events = resourcePlan.hiringEvents.filter((event) => event.workstream === workstream)
+      const events = resourcePlan.hiringEvents.filter((event) => event.scope === scope)
       const hires = events.reduce((sum, event) => sum + event.hires, 0)
       const currentStaff = rows[0]?.tutors ?? 0
       return {
-        workstream,
+        scope,
         currentStaff,
         hires,
         plannedStaff: currentStaff + hires,
@@ -191,11 +213,10 @@ export function ForecastView({
             <select
               id="forecast-workstream"
               value={selectedWorkstream}
-              onChange={(event) => onWorkstreamChange(event.target.value as Workstream | 'All')}
+              onChange={(event) => onWorkstreamChange(event.target.value as ReportingFilter)}
             >
-              <option value="All">All subjects</option>
-              {reportingWorkstreams.map((workstream) => (
-                <option key={workstream} value={workstream}>{workstream}</option>
+              {reportingFilterOptions.map((filter) => (
+                <option key={filter} value={filter}>{reportingFilterLabels[filter]}</option>
               ))}
             </select>
           </label>
@@ -246,31 +267,31 @@ export function ForecastView({
               <thead>
                 <tr>
                   <th>Month</th>
-                  {selectedStreams.map((workstream) => <th key={workstream}>{workstream}</th>)}
+                  {selectedStreams.map((scope) => <th key={scope}>{reportingFilterLabels[scope]}</th>)}
                   <th>Total learners</th>
                 </tr>
               </thead>
               <tbody>
                 {months.map((month) => {
-                  const total = selectedStreams.reduce((sum, workstream) => {
-                    const baseline = baselineRows.get(scenarioKey(month, workstream))
+                  const total = selectedStreams.reduce((sum, scope) => {
+                    const baseline = baselineRows.get(scenarioKey(month, scope))
                     return sum + scenarioLearnerCount(
-                      scenarioValues[scenarioKey(month, workstream)],
+                      scenarioValues[scenarioKey(month, scope)],
                       baseline?.peak_projected_caseload ?? 0,
                     )
                   }, 0)
                   return (
                     <tr key={month}>
                       <td><strong>{formatMonth(month)}</strong></td>
-                      {selectedStreams.map((workstream) => {
-                        const key = scenarioKey(month, workstream)
+                      {selectedStreams.map((scope) => {
+                        const key = scenarioKey(month, scope)
                         const baseline = baselineRows.get(key)?.peak_projected_caseload ?? 0
                         const overridden = Object.hasOwn(scenarioValues, key)
                         return (
-                          <td key={workstream}>
+                          <td key={scope}>
                             <input
                               className={overridden ? 'overridden' : ''}
-                              aria-label={`${workstream} projected active learners for ${formatMonth(month)}`}
+                              aria-label={`${reportingFilterLabels[scope]} projected active learners for ${formatMonth(month)}`}
                               type="number"
                               min="0"
                               step="1"
@@ -326,7 +347,7 @@ export function ForecastView({
         <article className="forecast-summary-card featured">
           <p>First hire needed</p>
           <strong className="summary-month">{summary.firstHire ? formatMonth(summary.firstHire.month) : 'None'}</strong>
-          <span>{summary.firstHire ? `${summary.firstHire.hires} ${summary.firstHire.workstream} tutor${summary.firstHire.hires > 1 ? 's' : ''}` : 'no recruitment trigger'}</span>
+          <span>{summary.firstHire ? `${summary.firstHire.hires} ${reportingFilterLabels[summary.firstHire.scope]} tutor${summary.firstHire.hires > 1 ? 's' : ''}` : 'no recruitment trigger'}</span>
         </article>
         <article className="forecast-summary-card">
           <p>Planned tutor headcount</p>
@@ -346,11 +367,11 @@ export function ForecastView({
         {resourcePlan.hiringEvents.length ? (
           <div className="hiring-timeline">
             {resourcePlan.hiringEvents.map((event, index) => (
-              <article key={`${event.month}-${event.workstream}`}>
+              <article key={`${event.month}-${event.scope}`}>
                 <span className="timeline-step">{index + 1}</span>
                 <div>
                   <time>{formatMonth(event.month)}</time>
-                  <h3>Hire {event.hires} {event.workstream} tutor{event.hires > 1 ? 's' : ''}</h3>
+                  <h3>Hire {event.hires} {reportingFilterLabels[event.scope]} tutor{event.hires > 1 ? 's' : ''}</h3>
                   <p>Have the new resource in place by the start of this month.</p>
                 </div>
               </article>
@@ -398,9 +419,9 @@ export function ForecastView({
         </div>
         <div className="outlook-grid">
           {workstreamPlans.map((row) => (
-            <article key={row.workstream} className={row.hires > 0 ? 'needs-resource' : ''}>
+            <article key={row.scope} className={row.hires > 0 ? 'needs-resource' : ''}>
               <div className="outlook-card-heading">
-                <h3>{row.workstream}</h3>
+                <h3>{reportingFilterLabels[row.scope]}</h3>
                 <span>{row.hires > 0 ? `${row.hires} hire${row.hires > 1 ? 's' : ''}` : 'Team sufficient'}</span>
               </div>
               <dl>

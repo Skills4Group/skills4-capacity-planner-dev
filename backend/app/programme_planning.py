@@ -6,6 +6,21 @@ from typing import Any
 from .models import PlannedCohortRecord, ProgrammePlanningRecord, Workstream
 
 
+def fetch_programme_aliases(connection: Any) -> dict[str, str]:
+    with connection.transaction():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION READ ONLY")
+            cursor.execute("SET LOCAL statement_timeout = '10s'")
+            cursor.execute(
+                """
+                SELECT lower(trim(alias_key)), programme_code
+                FROM capacity.programme_alias
+                ORDER BY alias_key
+                """
+            )
+            return {alias_key: programme_code for alias_key, programme_code in cursor.fetchall()}
+
+
 def planned_cohort_from_row(row: tuple[Any, ...]) -> PlannedCohortRecord:
     return PlannedCohortRecord(
         programme_code=row[0],

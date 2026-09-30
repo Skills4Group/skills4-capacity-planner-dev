@@ -11,13 +11,16 @@ from .models import (
     ForecastRequest,
     ForecastResponse,
     PipelineLearner,
+    ProgrammeMonth,
     REPORTING_WORKSTREAMS,
     Tutor,
     TutorMonth,
+    TutorProgrammeMonth,
     UnallocatedLearner,
     Workstream,
     WorkstreamMonth,
 )
+from .programme_classification import programme_display_name
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,8 @@ class AssignedLearner:
     start_date: date
     end_date: date
     source: str
+    programme_code: str
+    programme_name: str
 
 
 def month_start(value: date) -> date:
@@ -72,6 +77,38 @@ def tutor_stream_capacity_on(
     return tutor_stream_capacities_on(tutor, day).get(workstream, 0)
 
 
+def tutor_programme_capacities_on(
+    tutor: Tutor, day: date
+) -> dict[str, tuple[str, Workstream, int]]:
+    available = tutor.available_from is None or day >= tutor.available_from
+    if tutor.programme_allocations:
+        return {
+            allocation.programme_code: (
+                allocation.programme_name,
+                allocation.workstream,
+                allocation.capacity if available else 0,
+            )
+            for allocation in tutor.programme_allocations
+        }
+    programme_code = f"{tutor.workstream.value.casefold()}-general"
+    return {
+        programme_code: (
+            programme_display_name(programme_code),
+            tutor.workstream,
+            tutor.capacity if available else 0,
+        )
+    }
+
+
+def tutor_programme_capacity_on(
+    tutor: Tutor, programme_code: str | None, workstream: Workstream, day: date
+) -> int:
+    if programme_code is None:
+        return tutor_stream_capacity_on(tutor, workstream, day)
+    programme = tutor_programme_capacities_on(tutor, day).get(programme_code)
+    return programme[2] if programme else 0
+
+
 def days_in_month(start: date):
     current = start
     final = month_end(start)
@@ -101,6 +138,11 @@ def deduplicate_existing(
             start_date=learner.start_date,
             end_date=learner.expected_end_date,
             source="existing",
+            programme_code=(
+                learner.programme_code
+                or f"{(learner.workstream or tutors[learner.tutor_id].workstream).value.casefold()}-general"
+            ),
+            programme_name=learner.programme_name,
         )
         for learner in latest_by_learner.values()
     ]
@@ -118,8 +160,11 @@ def allocate_pipeline(
         candidates = [
             tutor
             for tutor in tutors.values()
-            if tutor_stream_capacity_on(
-                tutor, learner.workstream, learner.start_date
+            if tutor_programme_capacity_on(
+                tutor,
+                learner.programme_code,
+                learner.workstream,
+                learner.start_date,
             ) > 0
         ]
 
@@ -129,10 +174,17 @@ def allocate_pipeline(
                 for record in (*assigned, *allocations)
                 if record.tutor_id == tutor.tutor_id
                 and record.workstream == learner.workstream
+                and (
+                    learner.programme_code is None
+                    or record.programme_code == learner.programme_code
+                )
                 and active_on(record, learner.start_date)
             )
-            capacity = tutor_stream_capacity_on(
-                tutor, learner.workstream, learner.start_date
+            capacity = tutor_programme_capacity_on(
+                tutor,
+                learner.programme_code,
+                learner.workstream,
+                learner.start_date,
             )
             return (load / capacity, load, tutor.tutor_id)
 
@@ -142,8 +194,11 @@ def allocate_pipeline(
                 tutor
                 for tutor in candidates
                 if candidate_score(tutor)[1]
-                < tutor_stream_capacity_on(
-                    tutor, learner.workstream, learner.start_date
+                < tutor_programme_capacity_on(
+                    tutor,
+                    learner.programme_code,
+                    learner.workstream,
+                    learner.start_date,
                 )
             ),
             None,
@@ -156,6 +211,7 @@ def allocate_pipeline(
                     workstream=learner.workstream,
                     start_date=learner.start_date,
                     expected_end_date=learner.expected_end_date,
+                    programme_code=learner.programme_code,
                 )
             )
             continue
@@ -168,6 +224,11 @@ def allocate_pipeline(
                 start_date=learner.start_date,
                 end_date=learner.expected_end_date,
                 source="pipeline",
+                programme_code=(
+                    learner.programme_code
+                    or f"{learner.workstream.value.casefold()}-general"
+                ),
+                programme_name=learner.programme_name,
             )
         )
 
@@ -206,6 +267,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
             workstream=learner.workstream,
             start_date=learner.start_date,
             expected_end_date=learner.expected_end_date,
+            programme_code=learner.programme_code,
         )
         for learner in request.unallocated_existing_learners
         if learner.status in CAPACITY_CONSUMING_STATUSES
@@ -218,6 +280,8 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
     ]
     tutor_months: list[TutorMonth] = []
     workstream_months: list[WorkstreamMonth] = []
+    tutor_programme_months: list[TutorProgrammeMonth] = []
+    programme_months: list[ProgrammeMonth] = []
 
     for month in months:
         end = month_end(month)
@@ -278,6 +342,66 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                         if monthly_capacity
                         else 0
                     ),
+                    )
+                )
+
+            for programme_code, (
+                programme_name,
+                programme_workstream,
+                programme_capacity,
+            ) in tutor_programme_capacities_on(tutor, month).items():
+                records = [
+                    record
+                    for record in all_assigned
+                    if record.tutor_id == tutor.tutor_id
+                    and record.programme_code == programme_code
+                ]
+                opening = distinct_active_count(records, month)
+                closing = distinct_active_count(records, end)
+                peak = peak_count(records, month)
+                remaining = programme_capacity - peak
+                tutor_programme_months.append(
+                    TutorProgrammeMonth(
+                        month=month,
+                        tutor_id=tutor.tutor_id,
+                        tutor_name=tutor.tutor_name,
+                        workstream=programme_workstream,
+                        programme_code=programme_code,
+                        programme_name=programme_name,
+                        capacity=programme_capacity,
+                        active_cohorts=tutor.active_cohorts,
+                        opening_caseload=opening,
+                        existing_starts=len(
+                            {
+                                record.learner_id
+                                for record in records
+                                if record.source == "existing"
+                                and month <= record.start_date <= end
+                            }
+                        ),
+                        forecast_starts=len(
+                            {
+                                record.learner_id
+                                for record in records
+                                if record.source == "pipeline"
+                                and month <= record.start_date <= end
+                            }
+                        ),
+                        offboarded=len(
+                            {
+                                record.learner_id
+                                for record in records
+                                if month <= record.end_date <= end
+                            }
+                        ),
+                        closing_caseload=closing,
+                        peak_caseload=peak,
+                        remaining_capacity=remaining,
+                        utilisation_percent=(
+                            round((peak / programme_capacity) * 100, 1)
+                            if programme_capacity
+                            else 0
+                        ),
                     )
                 )
 
@@ -374,10 +498,136 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 )
             )
 
+        programme_definitions: dict[str, tuple[str, Workstream]] = {}
+        for tutor in tutors.values():
+            for programme_code, (
+                programme_name,
+                programme_workstream,
+                _,
+            ) in tutor_programme_capacities_on(tutor, month).items():
+                programme_definitions[programme_code] = (
+                    programme_name,
+                    programme_workstream,
+                )
+        for record in all_assigned:
+            programme_definitions.setdefault(
+                record.programme_code,
+                (programme_display_name(record.programme_code), record.workstream),
+            )
+        for record in (*unallocated, *unallocated_existing):
+            if record.programme_code:
+                programme_definitions.setdefault(
+                    record.programme_code,
+                    (programme_display_name(record.programme_code), record.workstream),
+                )
+
+        for programme_code, (
+            programme_name,
+            programme_workstream,
+        ) in programme_definitions.items():
+            programme_tutors = [
+                tutor
+                for tutor in tutors.values()
+                if programme_code in tutor_programme_capacities_on(tutor, month)
+            ]
+            assigned_records = [
+                record
+                for record in all_assigned
+                if record.programme_code == programme_code
+            ]
+            pipeline_unallocated = [
+                record
+                for record in unallocated
+                if record.programme_code == programme_code
+                and record.start_date <= end
+                and record.expected_end_date >= month
+            ]
+            existing_unallocated = [
+                record
+                for record in unallocated_existing
+                if record.programme_code == programme_code
+                and record.start_date <= end
+                and record.expected_end_date >= month
+            ]
+            all_unallocated = [*pipeline_unallocated, *existing_unallocated]
+            total_capacity = sum(
+                tutor_programme_capacity_on(
+                    tutor, programme_code, programme_workstream, month
+                )
+                for tutor in programme_tutors
+            )
+            projected_peak = peak_count(assigned_records, month) + max(
+                (
+                    len(
+                        {
+                            record.learner_id
+                            for record in all_unallocated
+                            if record.start_date <= day <= record.expected_end_date
+                        }
+                    )
+                    for day in days_in_month(month)
+                ),
+                default=0,
+            )
+            remaining = total_capacity - projected_peak
+            programme_rows = [
+                row
+                for row in tutor_programme_months
+                if row.month == month and row.programme_code == programme_code
+            ]
+            programme_months.append(
+                ProgrammeMonth(
+                    month=month,
+                    workstream=programme_workstream,
+                    programme_code=programme_code,
+                    programme_name=programme_name,
+                    tutors=len(programme_tutors),
+                    total_capacity=total_capacity,
+                    opening_caseload=sum(
+                        row.opening_caseload for row in programme_rows
+                    )
+                    + len(
+                        {
+                            record.learner_id
+                            for record in existing_unallocated
+                            if record.start_date <= month <= record.expected_end_date
+                        }
+                    ),
+                    forecast_starts=sum(
+                        row.forecast_starts for row in programme_rows
+                    )
+                    + len(
+                        {
+                            record.learner_id
+                            for record in pipeline_unallocated
+                            if month <= record.start_date <= end
+                        }
+                    ),
+                    offboarded=sum(row.offboarded for row in programme_rows)
+                    + len(
+                        {
+                            record.learner_id
+                            for record in existing_unallocated
+                            if month <= record.expected_end_date <= end
+                        }
+                    ),
+                    peak_projected_caseload=projected_peak,
+                    remaining_capacity=remaining,
+                    utilisation_percent=(
+                        round((projected_peak / total_capacity) * 100, 1)
+                        if total_capacity
+                        else 0
+                    ),
+                    additional_tutors_required=ceil(max(0, -remaining) / 50),
+                )
+            )
+
     return ForecastResponse(
         generated_at=request.as_of_date,
         months=months,
         tutor_months=tutor_months,
         workstream_months=workstream_months,
+        tutor_programme_months=tutor_programme_months,
+        programme_months=programme_months,
         unallocated_learners=[*unallocated, *unallocated_existing],
     )

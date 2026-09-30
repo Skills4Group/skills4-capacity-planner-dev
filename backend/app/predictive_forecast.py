@@ -10,6 +10,8 @@ from .forecast import (
     add_months,
     month_end,
     month_start,
+    tutor_programme_capacities_on,
+    tutor_programme_capacity_on,
     tutor_stream_capacities_on,
     tutor_stream_capacity_on,
 )
@@ -18,6 +20,8 @@ from .models import (
     CAPACITY_CONSUMING_STATUSES,
     ForecastRequest,
     PredictiveForecastResponse,
+    PredictiveProgrammeMonth,
+    PredictiveProgrammeSummary,
     PredictiveWorkstreamMonth,
     PredictiveWorkstreamSummary,
     PlannedCohortRecord,
@@ -25,6 +29,7 @@ from .models import (
     REPORTING_WORKSTREAMS,
     Workstream,
 )
+from .programme_classification import programme_display_name, resolve_programme_code
 
 
 NEW_TUTOR_CAPACITY = 50
@@ -175,6 +180,7 @@ def build_predictive_forecast(
     programme_mappings: dict[str, Workstream],
     programmes: list[ProgrammePlanningRecord] | None = None,
     planned_cohorts: list[PlannedCohortRecord] | None = None,
+    programme_aliases: dict[str, str] | None = None,
 ) -> PredictiveForecastResponse:
     programmes = [programme for programme in (programmes or []) if programme.active]
     planned_cohorts = planned_cohorts or []
@@ -203,6 +209,8 @@ def build_predictive_forecast(
             capacities[workstream] += capacity
 
     history_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
+    programme_history_counts: dict[str, Counter[date]] = defaultdict(Counter)
+    programme_earliest_history: dict[str, date] = {}
     earliest_history: dict[Workstream, date] = {}
     unmapped_with_start = 0
     missing_start = 0
@@ -222,6 +230,18 @@ def build_predictive_forecast(
             earliest_history[workstream] = min(
                 earliest_history.get(workstream, start_month), start_month
             )
+            programme_code = resolve_programme_code(
+                record.programme_name,
+                workstream=workstream,
+                programmes=programmes,
+                aliases=programme_aliases,
+            )
+            if programme_code:
+                programme_history_counts[programme_code][start_month] += 1
+                programme_earliest_history[programme_code] = min(
+                    programme_earliest_history.get(programme_code, start_month),
+                    start_month,
+                )
 
     durations = _duration_months(
         attendance_learners, programme_mappings, tutor_workstreams
@@ -241,35 +261,69 @@ def build_predictive_forecast(
 
     planned_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
     planned_duration_totals: dict[tuple[Workstream, date], int] = defaultdict(int)
+    programme_planned_counts: dict[str, Counter[date]] = defaultdict(Counter)
     for cohort in planned_cohorts:
         programme = programme_by_code.get(cohort.programme_code)
         if not programme or programme.workstream not in REPORTING_WORKSTREAMS:
             continue
         cohort_month = month_start(cohort.start_month)
         planned_counts[programme.workstream][cohort_month] += cohort.planned_starts
+        programme_planned_counts[programme.programme_code][
+            cohort_month
+        ] += cohort.planned_starts
         planned_duration_totals[(programme.workstream, cohort_month)] += (
             cohort.planned_starts * programme.duration_months
         )
     existing_by_stream = defaultdict(list)
+    existing_by_programme = defaultdict(list)
     valid_statuses = {status.value for status in CAPACITY_CONSUMING_STATUSES}
     for learner in forecast_request.existing_learners:
         tutor = tutors.get(learner.tutor_id)
         if tutor and learner.status.value in valid_statuses:
             existing_by_stream[tutor.workstream].append(learner)
+            programme_code = learner.programme_code or resolve_programme_code(
+                learner.programme_name,
+                workstream=learner.workstream or tutor.workstream,
+                programmes=programmes,
+                aliases=programme_aliases,
+            )
+            if programme_code:
+                existing_by_programme[programme_code].append(learner)
     for learner in forecast_request.unallocated_existing_learners:
         if (
             learner.workstream in REPORTING_WORKSTREAMS
             and learner.status.value in valid_statuses
         ):
             existing_by_stream[learner.workstream].append(learner)
+            programme_code = learner.programme_code or resolve_programme_code(
+                learner.programme_name,
+                workstream=learner.workstream,
+                programmes=programmes,
+                aliases=programme_aliases,
+            )
+            if programme_code:
+                existing_by_programme[programme_code].append(learner)
 
     pipeline_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
+    programme_pipeline_counts: dict[str, Counter[date]] = defaultdict(Counter)
     for learner in forecast_request.pipeline_learners:
         if learner.workstream in REPORTING_WORKSTREAMS:
             pipeline_counts[learner.workstream][month_start(learner.start_date)] += 1
+            programme_code = learner.programme_code or resolve_programme_code(
+                learner.programme_name,
+                workstream=learner.workstream,
+                programmes=programmes,
+                aliases=programme_aliases,
+            )
+            if programme_code:
+                programme_pipeline_counts[programme_code][
+                    month_start(learner.start_date)
+                ] += 1
 
     rows: list[PredictiveWorkstreamMonth] = []
     summaries: list[PredictiveWorkstreamSummary] = []
+    programme_rows: list[PredictiveProgrammeMonth] = []
+    programme_summaries: list[PredictiveProgrammeSummary] = []
     for workstream in REPORTING_WORKSTREAMS:
         values = [history_counts[workstream][month] for month in training_months]
         historical_starts = sum(values)
@@ -406,6 +460,169 @@ def build_predictive_forecast(
             )
         )
 
+    for programme in programmes:
+        if programme.workstream not in REPORTING_WORKSTREAMS:
+            continue
+        programme_code = programme.programme_code
+        values = [
+            programme_history_counts[programme_code][month]
+            for month in training_months
+        ]
+        historical_starts = sum(values)
+        observed_months = (
+            _month_distance(
+                programme_earliest_history[programme_code], training_end
+            )
+            + 1
+            if programme_code in programme_earliest_history
+            else 0
+        )
+        observed_months = min(MAX_TRAINING_MONTHS, observed_months)
+        predicted_starts: dict[str, list[int]] = {
+            "p50": [],
+            "p80": [],
+            "p90": [],
+        }
+        stream_programme_rows: list[PredictiveProgrammeMonth] = []
+
+        for index, month in enumerate(forecast_months):
+            p50, p80, p90 = _start_distribution(
+                training_months, values, month, index
+            )
+            known_starts = programme_pipeline_counts[programme_code][month]
+            planned_starts = programme_planned_counts[programme_code][month]
+            starts = {
+                "p50": max(p50, known_starts, planned_starts),
+                "p80": max(p80, known_starts, planned_starts),
+                "p90": max(p90, known_starts, planned_starts),
+            }
+            for key in predicted_starts:
+                predicted_starts[key].append(starts[key])
+
+            existing_active = len(
+                {
+                    learner.learner_id
+                    for learner in existing_by_programme[programme_code]
+                    if learner.start_date <= month_end(month)
+                    and learner.expected_end_date >= month
+                }
+            )
+            scheduled_finishes = len(
+                {
+                    learner.learner_id
+                    for learner in existing_by_programme[programme_code]
+                    if month <= learner.expected_end_date <= month_end(month)
+                }
+            )
+            active = {}
+            for key in ("p50", "p80", "p90"):
+                cohort_total = sum(
+                    predicted_starts[key][cohort_index]
+                    for cohort_index in range(index + 1)
+                    if index - cohort_index < programme.duration_months
+                )
+                active[key] = existing_active + cohort_total
+
+            capacity = sum(
+                tutor_programme_capacity_on(
+                    tutor,
+                    programme_code,
+                    programme.workstream,
+                    month,
+                )
+                for tutor in tutors.values()
+            )
+            stream_programme_rows.append(
+                PredictiveProgrammeMonth(
+                    month=month,
+                    workstream=programme.workstream,
+                    programme_code=programme_code,
+                    programme_name=programme.display_name,
+                    existing_active_learners=existing_active,
+                    scheduled_finishes=scheduled_finishes,
+                    known_pipeline_starts=known_starts,
+                    predicted_starts_p50=starts["p50"],
+                    predicted_starts_p80=starts["p80"],
+                    predicted_starts_p90=starts["p90"],
+                    predicted_active_p50=active["p50"],
+                    predicted_active_p80=active["p80"],
+                    predicted_active_p90=active["p90"],
+                    effective_capacity=capacity,
+                    additional_tutors_p50=ceil(
+                        max(0, active["p50"] - capacity) / NEW_TUTOR_CAPACITY
+                    ),
+                    additional_tutors_p80=ceil(
+                        max(0, active["p80"] - capacity) / NEW_TUTOR_CAPACITY
+                    ),
+                    additional_tutors_p90=ceil(
+                        max(0, active["p90"] - capacity) / NEW_TUTOR_CAPACITY
+                    ),
+                )
+            )
+
+        programme_rows.extend(stream_programme_rows)
+
+        def first_programme_shortage(level: str) -> date | None:
+            return next(
+                (
+                    row.month
+                    for row in stream_programme_rows
+                    if getattr(row, f"additional_tutors_{level}") > 0
+                ),
+                None,
+            )
+
+        current_active = len(
+            {
+                learner.learner_id
+                for learner in existing_by_programme[programme_code]
+                if learner.start_date <= as_of_date <= learner.expected_end_date
+            }
+        )
+        current_capacity = sum(
+            tutor_programme_capacity_on(
+                tutor,
+                programme_code,
+                programme.workstream,
+                as_of_date,
+            )
+            for tutor in tutors.values()
+        )
+        programme_summaries.append(
+            PredictiveProgrammeSummary(
+                workstream=programme.workstream,
+                programme_code=programme_code,
+                programme_name=programme.display_name,
+                historical_starts=historical_starts,
+                historical_months=observed_months,
+                median_duration_months=programme.duration_months,
+                data_confidence=_confidence(observed_months, historical_starts),
+                current_active_learners=current_active,
+                effective_capacity=current_capacity,
+                peak_active_p50=max(
+                    row.predicted_active_p50 for row in stream_programme_rows
+                ),
+                peak_active_p80=max(
+                    row.predicted_active_p80 for row in stream_programme_rows
+                ),
+                peak_active_p90=max(
+                    row.predicted_active_p90 for row in stream_programme_rows
+                ),
+                peak_additional_tutors_p50=max(
+                    row.additional_tutors_p50 for row in stream_programme_rows
+                ),
+                peak_additional_tutors_p80=max(
+                    row.additional_tutors_p80 for row in stream_programme_rows
+                ),
+                peak_additional_tutors_p90=max(
+                    row.additional_tutors_p90 for row in stream_programme_rows
+                ),
+                first_shortage_month_p50=first_programme_shortage("p50"),
+                first_shortage_month_p80=first_programme_shortage("p80"),
+                first_shortage_month_p90=first_programme_shortage("p90"),
+            )
+        )
+
     warnings = [
         "Predictions use each learner's latest Attendance record; historical status-transition dates are not available.",
         "The current partial month is excluded from training. Capacity changes at configured maternity return months; other current tutor settings are held constant.",
@@ -442,4 +659,6 @@ def build_predictive_forecast(
         data_warnings=warnings,
         workstream_months=rows,
         workstream_summaries=summaries,
+        programme_months=programme_rows,
+        programme_summaries=programme_summaries,
     )

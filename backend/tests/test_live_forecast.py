@@ -8,7 +8,7 @@ from app.adapters.capacity import (
 )
 from app.forecast import build_forecast
 from app.live_forecast import build_live_request, map_programme
-from app.models import Workstream
+from app.models import ProgrammePlanningRecord, Workstream
 
 
 def learner(tutor_id: str, programme: str) -> AttendanceLearnerRecord:
@@ -29,6 +29,64 @@ def test_programme_mapping_uses_config_before_fallback() -> None:
     assert map_programme("Level 3 Pharmacy Technician", {}) == Workstream.PHARMACY
     assert map_programme("Business Administrator", {}) == Workstream.BUSINESS
     assert map_programme("Operations or Departmental Manager", {}) == Workstream.OPERATIONS
+
+
+def test_live_request_distinguishes_pharmacy_levels_and_keeps_general() -> None:
+    programmes = [
+        ProgrammePlanningRecord(
+            programme_code="pharmacy-general",
+            display_name="Pharmacy (general)",
+            workstream=Workstream.PHARMACY,
+            duration_months=18,
+            active=True,
+        ),
+        ProgrammePlanningRecord(
+            programme_code="pharmacy-l2",
+            display_name="Pharmacy L2",
+            workstream=Workstream.PHARMACY,
+            level="L2",
+            duration_months=15,
+            active=True,
+        ),
+        ProgrammePlanningRecord(
+            programme_code="pharmacy-l3",
+            display_name="Pharmacy L3",
+            workstream=Workstream.PHARMACY,
+            level="L3",
+            duration_months=18,
+            active=True,
+        ),
+    ]
+    level_two = learner("T1", "Level 2 Pharmacy Services Assistant")
+    general = learner("T1", "Pharmacy Services")
+    general = AttendanceLearnerRecord(
+        learner_id="GENERAL",
+        tutor_id=general.tutor_id,
+        tutor_name=general.tutor_name,
+        programme_name=general.programme_name,
+        start_date=general.start_date,
+        expected_end_date=general.expected_end_date,
+        status_desc=general.status_desc,
+        synced_at=general.synced_at,
+    )
+
+    request = build_live_request(
+        as_of_date=date(2026, 8, 11),
+        months=1,
+        attendance_learners=[level_two, general],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[
+            TutorSettingRecord("T1", "Tutor One", Workstream.PHARMACY, 50)
+        ],
+        programme_mappings={},
+        pipeline_learners=[],
+        programmes=programmes,
+    )
+
+    assert {row.learner_id: row.programme_code for row in request.existing_learners} == {
+        "L-T1": "pharmacy-l2",
+        "GENERAL": "pharmacy-general",
+    }
 
 
 def test_capacity_setting_overrides_inferred_stream_and_default_capacity() -> None:

@@ -6,6 +6,7 @@ from app.models import (
     ExistingLearner,
     ForecastRequest,
     LearnerStatus,
+    ProgrammePlanningRecord,
     Tutor,
     Workstream,
 )
@@ -168,3 +169,63 @@ def test_sparse_history_is_labelled_low_confidence() -> None:
         if summary.workstream == Workstream.DENTAL
     )
     assert dental.data_confidence == "Low"
+
+
+def test_predictive_rows_separate_pharmacy_l2_from_general() -> None:
+    existing = ExistingLearner(
+        learner_id="L2-ACTIVE",
+        tutor_id="T-PHA",
+        programme_name="Pharmacy L2",
+        programme_code="pharmacy-l2",
+        workstream=Workstream.PHARMACY,
+        start_date=date(2026, 1, 1),
+        expected_end_date=date(2026, 9, 20),
+        status=LearnerStatus.IN_PROGRESS,
+    )
+    programmes = [
+        ProgrammePlanningRecord(
+            programme_code="pharmacy-general",
+            display_name="Pharmacy (general)",
+            workstream=Workstream.PHARMACY,
+            duration_months=18,
+            active=True,
+        ),
+        ProgrammePlanningRecord(
+            programme_code="pharmacy-l2",
+            display_name="Pharmacy L2",
+            workstream=Workstream.PHARMACY,
+            level="L2",
+            duration_months=15,
+            active=True,
+        ),
+    ]
+
+    response = build_predictive_forecast(
+        as_of_date=date(2026, 8, 14),
+        months=1,
+        attendance_learners=[
+            attendance_record(
+                existing.learner_id,
+                existing.programme_name,
+                existing.start_date,
+                existing.expected_end_date,
+            )
+        ],
+        forecast_request=build_request([existing]),
+        programme_mappings={},
+        programmes=programmes,
+    )
+
+    l2 = next(
+        row
+        for row in response.programme_months
+        if row.programme_code == "pharmacy-l2"
+    )
+    general = next(
+        row
+        for row in response.programme_months
+        if row.programme_code == "pharmacy-general"
+    )
+    assert l2.existing_active_learners == 1
+    assert l2.scheduled_finishes == 1
+    assert general.existing_active_learners == 0
