@@ -18,6 +18,7 @@ function row(
     month,
     workstream: 'Pharmacy',
     existing_active_learners: active,
+    scheduled_finishes: 0,
     known_pipeline_starts: 0,
     predicted_starts_p50: starts,
     predicted_starts_p80: starts,

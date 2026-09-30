@@ -141,8 +141,10 @@ def test_scheduled_end_date_removes_existing_learner_after_offboarding_month() -
     ]
     assert pharmacy_rows[0].month == date(2026, 9, 1)
     assert pharmacy_rows[0].existing_active_learners == 1
+    assert pharmacy_rows[0].scheduled_finishes == 1
     assert pharmacy_rows[1].month == date(2026, 10, 1)
     assert pharmacy_rows[1].existing_active_learners == 0
+    assert pharmacy_rows[1].scheduled_finishes == 0
 
 
 def test_sparse_history_is_labelled_low_confidence() -> None:

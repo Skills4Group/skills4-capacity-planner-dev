@@ -313,6 +313,13 @@ def build_predictive_forecast(
                     and learner.expected_end_date >= month
                 }
             )
+            scheduled_finishes = len(
+                {
+                    learner.learner_id
+                    for learner in existing_by_stream[workstream]
+                    if month <= learner.expected_end_date <= month_end(month)
+                }
+            )
 
             active = {}
             for key in ("p50", "p80", "p90"):
@@ -332,6 +339,7 @@ def build_predictive_forecast(
                     month=month,
                     workstream=workstream,
                     existing_active_learners=existing_active,
+                    scheduled_finishes=scheduled_finishes,
                     known_pipeline_starts=known_starts,
                     predicted_starts_p50=starts["p50"],
                     predicted_starts_p80=starts["p80"],

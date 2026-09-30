@@ -153,6 +153,7 @@ export function PredictiveForecastView({
     return {
       month,
       existing: sourceRows.reduce((sum, row) => sum + row.existing_active_learners, 0),
+      finishes: sourceRows.reduce((sum, row) => sum + row.scheduled_finishes, 0),
       knownStarts: sourceRows.reduce((sum, row) => sum + row.known_pipeline_starts, 0),
       baselineStarts: modeledRows.reduce((sum, row) => sum + row.baselineStarts, 0),
       scenarioStarts: modeledRows.reduce((sum, row) => sum + row.effectiveStarters, 0),
@@ -301,7 +302,7 @@ export function PredictiveForecastView({
 
       <section className="resource-table-card predictive-table-card">
         <div className="section-heading"><div><p className="eyebrow">Numerical forecast</p><h2>Monthly demand and staffing requirement</h2></div></div>
-        <div className="resource-table-wrap"><table className="resource-table predictive-table"><thead><tr><th>Month</th><th>Existing</th><th>Known pipeline</th><th>Model starts</th><th>Scenario starts</th><th>Baseline active</th><th>Revised active</th><th>Capacity</th><th>Variance</th><th>Additional tutors</th></tr></thead><tbody>{monthly.map((row) => <tr key={row.month} className={row.hasAdjustment ? 'scenario-adjusted-row' : ''}><td><strong>{formatMonth(row.month)}</strong></td><td>{row.existing}</td><td>{row.knownStarts}</td><td>{row.baselineStarts}</td><td><strong>{row.scenarioStarts}</strong></td><td>{row.baselineActive}</td><td><strong>{row.active}</strong></td><td>{row.capacity}</td><td className={row.active - row.baselineActive < 0 ? 'negative' : row.active - row.baselineActive > 0 ? 'positive' : ''}>{signed(row.active - row.baselineActive)}</td><td><span className={`resource-status ${row.tutors > 0 ? 'gap' : 'covered'}`}>{row.tutors > 0 ? `${row.tutors} required` : 'Covered'}</span></td></tr>)}</tbody></table></div>
+        <div className="resource-table-wrap"><table className="resource-table predictive-table"><thead><tr><th>Month</th><th>Existing</th><th title="Existing learners whose planned end date falls within this month">Learners finishing</th><th>Known pipeline</th><th>Model starts</th><th>Scenario starts</th><th>Baseline active</th><th>Revised active</th><th>Capacity</th><th>Variance</th><th>Additional tutors</th></tr></thead><tbody>{monthly.map((row) => <tr key={row.month} className={row.hasAdjustment ? 'scenario-adjusted-row' : ''}><td><strong>{formatMonth(row.month)}</strong></td><td>{row.existing}</td><td>{row.finishes}</td><td>{row.knownStarts}</td><td>{row.baselineStarts}</td><td><strong>{row.scenarioStarts}</strong></td><td>{row.baselineActive}</td><td><strong>{row.active}</strong></td><td>{row.capacity}</td><td className={row.active - row.baselineActive < 0 ? 'negative' : row.active - row.baselineActive > 0 ? 'positive' : ''}>{signed(row.active - row.baselineActive)}</td><td><span className={`resource-status ${row.tutors > 0 ? 'gap' : 'covered'}`}>{row.tutors > 0 ? `${row.tutors} required` : 'Covered'}</span></td></tr>)}</tbody></table></div>
       </section>
 
       <details className="predictive-warnings"><summary>Data quality notes ({forecast.data_warnings.length})</summary><ul>{forecast.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>

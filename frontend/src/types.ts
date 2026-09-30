@@ -63,6 +63,7 @@ export interface PredictiveWorkstreamMonth {
   month: string
   workstream: Workstream
   existing_active_learners: number
+  scheduled_finishes: number
   known_pipeline_starts: number
   predicted_starts_p50: number
   predicted_starts_p80: number

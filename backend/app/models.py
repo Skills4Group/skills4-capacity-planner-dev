@@ -169,6 +169,7 @@ class PredictiveWorkstreamMonth(BaseModel):
     month: date
     workstream: Workstream
     existing_active_learners: int
+    scheduled_finishes: int = Field(ge=0)
     known_pipeline_starts: int
     predicted_starts_p50: int
     predicted_starts_p80: int
