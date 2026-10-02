@@ -1731,6 +1731,43 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   font-weight: 650;
 }
 
+.tutor-download-control {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #858c9b;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.tutor-download-control > button {
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid #7137cc;
+  border-radius: 6px;
+  background: #7137cc;
+  color: #fff;
+  font: 750 9px/1 var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tutor-download-control > button:hover:not(:disabled) {
+  background: #5e29b4;
+}
+
+.tutor-download-control > button:disabled {
+  border-color: #e0e2e8;
+  background: #e7e8ed;
+  color: #a5aab5;
+  cursor: default;
+}
+
+.tutor-download-control small {
+  margin-left: 5px;
+  opacity: .8;
+}
+
 .tutor-tools select,
 .tutor-tools input {
   height: 34px;
@@ -2244,6 +2281,8 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   .tutor-management-heading { padding: 18px 16px; }
   .tutor-tools { width: 100%; }
   .tutor-tools label { flex: 1; }
+  .tutor-download-control { flex: 1; }
+  .tutor-download-control > button { width: 100%; }
   .tutor-tools select,
   .tutor-tools input { width: 100%; min-width: 0; }
   .tutor-message { margin-inline: 16px; }

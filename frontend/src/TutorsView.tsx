@@ -13,6 +13,7 @@ import {
   effectiveTutorProgrammeAllocations,
   tutorMatchesProgramme,
 } from './tutorProgrammeAllocation'
+import { buildTutorDirectoryCsv, type TutorDirectoryCsvRow } from './tutorDirectoryCsv'
 
 interface TutorDraft {
   capacity: string
@@ -57,6 +58,7 @@ export function TutorsView({
   const [search, setSearch] = useState('')
   const [workstreamFilter, setWorkstreamFilter] = useState<Workstream | 'All' | 'Unassigned' | 'New' | 'Inactive' | 'Non-delivery'>('All')
   const [programmeFilter, setProgrammeFilter] = useState('All')
+  const [asOfDate, setAsOfDate] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -77,6 +79,7 @@ export function TutorsView({
     }
     setTutors(payload.tutors)
     setProgrammes(payload.programmes)
+    setAsOfDate(payload.as_of_date)
     onDiscoveryCountChange(payload.new_tutor_count)
     setDrafts(Object.fromEntries(payload.tutors.map((tutor) => [
       tutor.tutor_id,
@@ -289,6 +292,60 @@ export function TutorsView({
     }
   }
 
+  function downloadTutorDirectory() {
+    const rows: TutorDirectoryCsvRow[] = visibleTutors.map((tutor) => {
+      const draft = drafts[tutor.tutor_id] ?? {
+        capacity: String(tutor.capacity),
+        allocations: initialAllocations(tutor, programmes),
+        onMaternityLeave: tutor.on_maternity_leave,
+        maternityReturnDate: tutor.maternity_return_date ?? '',
+        deliveryEligible: tutor.delivery_eligible,
+      }
+      const capacity = Number(draft.capacity)
+      const onLeaveNow = draft.onMaternityLeave
+        && (!draft.maternityReturnDate || new Date(`${draft.maternityReturnDate}T00:00:00Z`) > new Date())
+      const effectiveCapacity = onLeaveNow || !tutor.is_active || !draft.deliveryEligible ? 0 : capacity
+      const remaining = !tutor.is_active || !draft.deliveryEligible
+        ? 'Excluded'
+        : effectiveCapacity - tutor.current_caseload
+      const utilisation = calculateTutorUtilisation({
+        currentLearners: tutor.current_caseload,
+        capacity,
+        isActive: tutor.is_active,
+        onMaternityLeave: onLeaveNow,
+      })
+      const allocationLabels = draft.allocations.map((allocation) => {
+        const programme = programmes.find((row) => row.programme_code === allocation.programmeCode)
+        const label = programme?.display_name ?? allocation.programmeCode
+        return `${label} (${allocation.capacity} places)`
+      })
+      return {
+        tutorName: tutor.tutor_name,
+        tutorId: tutor.tutor_id,
+        teachingAllocations: allocationLabels.join('; '),
+        currentLearners: tutor.current_caseload,
+        activeCohorts: tutor.active_cohorts,
+        maximumCapacity: capacity,
+        deliveryRole: draft.deliveryEligible ? 'Delivery' : 'Non-delivery',
+        maternityLeave: draft.onMaternityLeave ? 'On leave' : 'Available',
+        returnMonth: draft.maternityReturnDate ? draft.maternityReturnDate.slice(0, 7) : '',
+        tutorStatus: tutor.is_active ? 'Active' : 'Inactive',
+        remaining,
+        utilisation: utilisation.label,
+        configuration: sourceLabel(tutor.workstream_source),
+      }
+    })
+    const file = new Blob([buildTutorDirectoryCsv(rows)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `skills4-tutor-directory-${asOfDate || new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="tutors-view">
       <header className="topbar tutors-topbar">
@@ -336,6 +393,7 @@ export function TutorsView({
             <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option><option>Non-delivery</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
             <label><span>Programme</span><select value={programmeFilter} onChange={(event) => setProgrammeFilter(event.target.value)}><option value="All">All programmes</option>{programmes.filter((programme) => programme.active && programme.workstream !== 'Operations').map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name}</option>)}</select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
+            <div className="tutor-download-control"><span>Export</span><button type="button" disabled={loading || visibleTutors.length === 0} onClick={downloadTutorDirectory}>Download CSV <small>{visibleTutors.length}</small></button></div>
           </div>
         </div>
 
