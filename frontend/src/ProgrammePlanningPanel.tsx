@@ -49,6 +49,7 @@ export function ProgrammePlanningPanel({ onSaved }: ProgrammePlanningPanelProps)
   const [drafts, setDrafts] = useState<Record<string, ProgrammeDraft>>({})
   const [savingCode, setSavingCode] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [isExpanded, setIsExpanded] = useState(false)
   const months = useMemo(() => monthsForAcademicYear(selectedYear), [selectedYear])
 
   useEffect(() => {
@@ -126,14 +127,19 @@ export function ProgrammePlanningPanel({ onSaved }: ProgrammePlanningPanelProps)
 
   return (
     <section className="programme-planning-card" aria-labelledby="programme-planning-title">
-      <div className="programme-planning-heading">
+      <div className={`programme-planning-heading${isExpanded ? '' : ' collapsed'}`}>
         <div><p className="eyebrow">Academic-year intake plan</p><h2 id="programme-planning-title">Programme durations and planned starts</h2><p>Planned starts are a programme-level minimum in the predictive model. Duration controls how long each planned cohort remains in projected demand.</p></div>
-        <label><span>Academic year</span><select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)}>{years.map((year) => <option key={year}>{year}</option>)}</select></label>
+        <div className="programme-planning-actions">
+          {isExpanded && <label><span>Academic year</span><select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)}>{years.map((year) => <option key={year}>{year}</option>)}</select></label>}
+          <button className="programme-planning-toggle" type="button" aria-expanded={isExpanded} aria-controls="programme-planning-content" onClick={() => setIsExpanded((current) => !current)}>{isExpanded ? 'Collapse plan' : 'Expand plan'}<span aria-hidden="true">{isExpanded ? '⌃' : '⌄'}</span></button>
+        </div>
       </div>
       {error && <div className="tutor-message error" role="alert">{error}</div>}
-      {!session.is_admin && planning && <div className="tutor-message">Programme plans are read only until an authorised administrator signs in.</div>}
-      {planning && <div className="programme-planning-table-wrap"><table className="programme-planning-table"><thead><tr><th>Programme</th><th>Workstream</th><th>Duration</th>{months.map((month) => <th key={month}>{monthFormatter.format(new Date(`${month}T00:00:00Z`))}</th>)}<th></th></tr></thead><tbody>{planning.programmes.filter((programme) => programme.workstream !== 'Operations').map((programme) => { const draft = drafts[programme.programme_code]; if (!draft) return null; const validDuration = Number.isInteger(Number(draft.duration)) && Number(draft.duration) >= 3 && Number(draft.duration) <= 60; return <tr key={programme.programme_code} className={!draft.active ? 'inactive-programme-row' : ''}><td><strong>{programme.display_name}</strong>{programme.level && <small>{programme.level}</small>}</td><td>{programme.workstream}</td><td><div className="programme-duration-input"><input type="number" min="3" max="60" value={draft.duration} disabled={!session.is_admin} onChange={(event) => changeDraft(programme.programme_code, { duration: event.target.value })} /><span>months</span></div></td>{months.map((month) => <td key={month}><input className="planned-start-input" aria-label={`${programme.display_name} planned starts for ${month}`} type="number" min="0" step="1" value={draft.starts[month]} disabled={!session.is_admin || !draft.active} onChange={(event) => { if (!/^\d*$/.test(event.target.value)) return; changeDraft(programme.programme_code, { starts: { ...draft.starts, [month]: event.target.value } }) }} /></td>)}<td><button className="save-tutor-button" disabled={!session.is_admin || !validDuration || savingCode !== null} onClick={() => saveProgramme(programme.programme_code)}>{savingCode === programme.programme_code ? 'Saving…' : 'Save row'}</button></td></tr> })}</tbody></table></div>}
-      <p className="predictive-scenario-footnote">All entries are stored only in the Capacity Tracker database. Attendance remains read only.</p>
+      <div id="programme-planning-content" hidden={!isExpanded}>
+        {!session.is_admin && planning && <div className="tutor-message">Programme plans are read only until an authorised administrator signs in.</div>}
+        {planning && <div className="programme-planning-table-wrap"><table className="programme-planning-table"><thead><tr><th>Programme</th><th>Workstream</th><th>Duration</th>{months.map((month) => <th key={month}>{monthFormatter.format(new Date(`${month}T00:00:00Z`))}</th>)}<th></th></tr></thead><tbody>{planning.programmes.filter((programme) => programme.workstream !== 'Operations').map((programme) => { const draft = drafts[programme.programme_code]; if (!draft) return null; const validDuration = Number.isInteger(Number(draft.duration)) && Number(draft.duration) >= 3 && Number(draft.duration) <= 60; return <tr key={programme.programme_code} className={!draft.active ? 'inactive-programme-row' : ''}><td><strong>{programme.display_name}</strong>{programme.level && <small>{programme.level}</small>}</td><td>{programme.workstream}</td><td><div className="programme-duration-input"><input type="number" min="3" max="60" value={draft.duration} disabled={!session.is_admin} onChange={(event) => changeDraft(programme.programme_code, { duration: event.target.value })} /><span>months</span></div></td>{months.map((month) => <td key={month}><input className="planned-start-input" aria-label={`${programme.display_name} planned starts for ${month}`} type="number" min="0" step="1" value={draft.starts[month]} disabled={!session.is_admin || !draft.active} onChange={(event) => { if (!/^\d*$/.test(event.target.value)) return; changeDraft(programme.programme_code, { starts: { ...draft.starts, [month]: event.target.value } }) }} /></td>)}<td><button className="save-tutor-button" disabled={!session.is_admin || !validDuration || savingCode !== null} onClick={() => saveProgramme(programme.programme_code)}>{savingCode === programme.programme_code ? 'Saving…' : 'Save row'}</button></td></tr> })}</tbody></table></div>}
+        <p className="predictive-scenario-footnote">All entries are stored only in the Capacity Tracker database. Attendance remains read only.</p>
+      </div>
     </section>
   )
 }
