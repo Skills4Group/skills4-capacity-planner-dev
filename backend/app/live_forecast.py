@@ -78,6 +78,7 @@ def build_live_request(
     active_cohort_counts: dict[str, int] | None = None,
     programmes: list[ProgrammePlanningRecord] | None = None,
     programme_aliases: dict[str, str] | None = None,
+    planned_tutors: list[Tutor] | None = None,
     history_months: int = 0,
 ) -> ForecastRequest:
     active_cohort_counts = active_cohort_counts or {}
@@ -169,6 +170,13 @@ def build_live_request(
                     programme_allocations=list(setting.programme_allocations),
                 )
             )
+
+    existing_tutor_ids = {tutor.tutor_id for tutor in tutors}
+    tutors.extend(
+        tutor for tutor in (planned_tutors or [])
+        if tutor.tutor_id not in existing_tutor_ids
+        and tutor.tutor_id not in excluded_tutor_ids
+    )
 
     valid_tutor_ids = {tutor.tutor_id for tutor in tutors}
     valid_statuses = {status.value: status for status in LearnerStatus}

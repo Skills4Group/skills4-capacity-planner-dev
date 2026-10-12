@@ -13,6 +13,7 @@ import {
   type ReportingFilter,
   type ReportingScope,
 } from './reportingFilters'
+import { distinctAvailableTutors } from './forecastMetrics'
 
 const NEW_TUTOR_CAPACITY = 50
 
@@ -133,7 +134,15 @@ export function ForecastView({
         }
       })
 
-      const currentStaff = rows.reduce((sum, row) => sum + row.tutors, 0)
+      const tutorRows = isProgrammeFilter(selectedWorkstream)
+        ? forecast.tutor_programme_months.filter(
+          (row) => row.month === month && row.programme_code === selectedWorkstream,
+        )
+        : forecast.tutor_months.filter(
+          (row) => row.month === month
+            && (selectedWorkstream === 'All' || row.workstream === selectedWorkstream),
+        )
+      const currentStaff = distinctAvailableTutors(tutorRows)
       const staffRequired = currentStaff + rows.reduce((sum, row) => sum + row.additional_tutors_required, 0)
       const plannedStaff = currentStaff + selectedStreams.reduce(
         (sum, scope) => sum + (plannedHires.get(scope) ?? 0),
@@ -154,10 +163,16 @@ export function ForecastView({
     })
 
     return { monthly, hiringEvents }
-  }, [modeledWorkstreamMonths, months, selectedStreams])
+  }, [forecast.tutor_months, forecast.tutor_programme_months, modeledWorkstreamMonths, months, selectedStreams, selectedWorkstream])
 
   const summary = useMemo(() => {
     const currentStaff = resourcePlan.monthly[0]?.currentStaff ?? 0
+    const tutorRows = isProgrammeFilter(selectedWorkstream)
+      ? forecast.tutor_programme_months.filter((row) => row.programme_code === selectedWorkstream)
+      : forecast.tutor_months.filter((row) => selectedWorkstream === 'All' || row.workstream === selectedWorkstream)
+    const confirmedFutureTutors = new Set(tutorRows.filter(
+      (row) => row.is_planned && row.capacity > 0 && months.includes(row.month),
+    ).map((row) => row.tutor_id)).size
     const totalHires = resourcePlan.hiringEvents.reduce((sum, event) => sum + event.hires, 0)
     const peakStaffRequired = Math.max(...resourcePlan.monthly.map((row) => row.staffRequired), currentStaff)
     const firstGapIndex = resourcePlan.monthly.findIndex((row) => !row.currentTeamCovers)
@@ -169,14 +184,15 @@ export function ForecastView({
           : months[firstGapIndex - 1]
     return {
       currentStaff,
+      confirmedFutureTutors,
       totalHires,
       peakStaffRequired,
-      plannedHeadcount: currentStaff + totalHires,
+      plannedHeadcount: (resourcePlan.monthly.at(-1)?.currentStaff ?? currentStaff) + totalHires,
       firstHire: resourcePlan.hiringEvents[0],
       currentCoverageThrough,
       currentTeamCoversHorizon: resourcePlan.hiringEvents.length === 0,
     }
-  }, [months, resourcePlan])
+  }, [forecast.tutor_months, forecast.tutor_programme_months, months, resourcePlan, selectedWorkstream])
 
   const workstreamPlans = useMemo(
     () => selectedStreams.map((scope) => {
@@ -190,7 +206,7 @@ export function ForecastView({
         scope,
         currentStaff,
         hires,
-        plannedStaff: currentStaff + hires,
+        plannedStaff: (rows.at(-1)?.tutors ?? currentStaff) + hires,
         firstHire: events[0],
         peakLearners: Math.max(...rows.map((row) => row.peak_projected_caseload), 0),
       }
@@ -321,13 +337,13 @@ export function ForecastView({
       <section className={`staffing-answer ${summary.currentTeamCoversHorizon ? 'covered' : 'action'}`} aria-label="Staffing recommendation">
         <span className="staffing-answer-icon">{summary.currentTeamCoversHorizon ? '✓' : '!'}</span>
         <div>
-          <p>{summary.currentTeamCoversHorizon ? 'Current staffing is sufficient' : 'Recruitment is required'}</p>
+          <p>{summary.currentTeamCoversHorizon ? 'Confirmed staffing is sufficient' : 'Recruitment is required'}</p>
           {summary.currentTeamCoversHorizon ? (
-            <h2>Your current {summary.currentStaff} tutor staff cover demand through {formatMonth(months.at(-1) ?? months[0])}.</h2>
+            <h2>Available and confirmed tutor staffing covers demand through {formatMonth(months.at(-1) ?? months[0])}.</h2>
           ) : (
             <h2>
               Recruit {summary.totalHires} additional {summary.totalHires === 1 ? 'tutor' : 'tutors'} across the selected horizon.
-              Current staffing covers demand through {summary.currentCoverageThrough ? formatMonth(summary.currentCoverageThrough) : 'the start of the forecast'}.
+              Available and confirmed staffing covers demand through {summary.currentCoverageThrough ? formatMonth(summary.currentCoverageThrough) : 'the start of the forecast'}.
             </h2>
           )}
         </div>
@@ -335,14 +351,14 @@ export function ForecastView({
 
       <section className="forecast-summary-grid" aria-label="Staffing forecast summary">
         <article className="forecast-summary-card">
-          <p>Current tutor staff</p>
+          <p>Available tutor staff</p>
           <strong>{summary.currentStaff}</strong>
-          <span>available today</span>
+          <span>{summary.confirmedFutureTutors ? `${summary.confirmedFutureTutors} confirmed future tutor${summary.confirmedFutureTutors === 1 ? '' : 's'} included` : 'in the first forecast month'}</span>
         </article>
         <article className={`forecast-summary-card ${summary.totalHires > 0 ? 'attention' : ''}`}>
           <p>New tutors to recruit</p>
           <strong>{summary.totalHires}</strong>
-          <span>{summary.totalHires > 0 ? 'to cover the full horizon' : 'current team is sufficient'}</span>
+          <span>{summary.totalHires > 0 ? 'to cover the full horizon' : 'confirmed staffing is sufficient'}</span>
         </article>
         <article className="forecast-summary-card featured">
           <p>First hire needed</p>
@@ -378,7 +394,7 @@ export function ForecastView({
             ))}
           </div>
         ) : (
-          <div className="no-hiring-plan"><strong>No recruitment required</strong><span>The current team covers every month in the selected horizon.</span></div>
+          <div className="no-hiring-plan"><strong>No recruitment required</strong><span>Available and confirmed staffing covers every month in the selected horizon.</span></div>
         )}
       </section>
 
@@ -386,10 +402,10 @@ export function ForecastView({
         <div className="section-heading">
           <div>
             <p className="eyebrow">Staffing coverage by month</p>
-            <h2 id="resource-chart-title">Current, required and planned staff</h2>
+            <h2 id="resource-chart-title">Available, required and planned staff</h2>
           </div>
           <div className="resource-legend">
-            <span className="available-key">Current staff</span>
+            <span className="available-key">Available staff</span>
             <span className="required-key">Staff required</span>
             <span className="planned-key">Planned staff</span>
           </div>
@@ -397,7 +413,7 @@ export function ForecastView({
         <div
           className="resource-chart"
           role="img"
-          aria-label="Current tutor staff compared with required and planned staffing by month"
+          aria-label="Available tutor staff compared with required and planned staffing by month"
           style={{ gridTemplateColumns: `repeat(${resourcePlan.monthly.length}, minmax(44px, 1fr))` }}
         >
           {resourcePlan.monthly.map((row) => (
@@ -425,12 +441,12 @@ export function ForecastView({
                 <span>{row.hires > 0 ? `${row.hires} hire${row.hires > 1 ? 's' : ''}` : 'Team sufficient'}</span>
               </div>
               <dl>
-                <div><dt>Current staff</dt><dd>{row.currentStaff}</dd></div>
+                <div><dt>Available staff</dt><dd>{row.currentStaff}</dd></div>
                 <div><dt>New hires</dt><dd className={row.hires > 0 ? 'negative' : ''}>{row.hires}</dd></div>
                 <div><dt>Planned team</dt><dd>{row.plannedStaff}</dd></div>
                 <div><dt>Peak learners</dt><dd>{row.peakLearners}</dd></div>
               </dl>
-              <p>{row.firstHire ? `First tutor needed by ${formatMonth(row.firstHire.month)}` : 'Current staffing covers this horizon'}</p>
+              <p>{row.firstHire ? `First tutor needed by ${formatMonth(row.firstHire.month)}` : 'Confirmed staffing covers this horizon'}</p>
             </article>
           ))}
         </div>
@@ -443,7 +459,7 @@ export function ForecastView({
         <div className="resource-table-wrap">
           <table className="resource-table">
             <thead>
-              <tr><th>Month</th><th>Projected learners</th><th>Current staff</th><th>Staff required</th><th>Hire this month</th><th>Planned staff</th><th>Without recruitment</th></tr>
+              <tr><th>Month</th><th>Projected learners</th><th>Available staff</th><th>Staff required</th><th>Hire this month</th><th>Planned staff</th><th>Without recruitment</th></tr>
             </thead>
             <tbody>
               {resourcePlan.monthly.map((row) => (

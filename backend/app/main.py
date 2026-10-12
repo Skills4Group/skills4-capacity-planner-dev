@@ -2,7 +2,7 @@ from pathlib import Path
 
 import logging
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .demo import build_demo_forecast, build_demo_predictive_forecast
-from .forecast import build_forecast
+from .forecast import add_months, build_forecast, month_start
 from .adapters.attendance import (
     fetch_active_cohort_counts,
     fetch_active_tutors,
@@ -65,6 +65,7 @@ from .predictive_forecast import build_predictive_forecast
 from .programme_planning import (
     academic_year_for,
     fetch_programme_aliases,
+    fetch_confirmed_planned_tutors,
     fetch_programme_planning,
     save_planned_cohort,
     save_programme_setting,
@@ -355,14 +356,15 @@ def demo_predictive_forecast() -> PredictiveForecastResponse:
 def live_forecast() -> ForecastResponse:
     if settings.database_mode.lower() != "live":
         raise HTTPException(status_code=503, detail="Live data mode is not configured")
+    as_of_date = date.today()
     try:
         with attendance_connection(settings) as attendance:
             learners = fetch_learner_progress(attendance)
             tutors = fetch_active_tutors(attendance)
-            active_cohort_counts = fetch_active_cohort_counts(attendance, date.today())
+            active_cohort_counts = fetch_active_cohort_counts(attendance, as_of_date)
         with capacity_connection(settings) as capacity:
             tutor_settings, mappings, tutor_statuses, pipeline = fetch_capacity_inputs(
-                capacity, date.today()
+                capacity, as_of_date
             )
             tutor_aliases = fetch_tutor_identity_aliases(capacity)
             active_cohort_counts = consolidate_tutor_counts(
@@ -370,12 +372,22 @@ def live_forecast() -> ForecastResponse:
                 tutors=tutors,
                 aliases=tutor_aliases,
             )
-            programmes, _ = fetch_programme_planning(
-                capacity, academic_year_for(date.today())
-            )
+            horizon_end = add_months(month_start(as_of_date), settings.forecast_months) - timedelta(days=1)
+            planned_tutors = fetch_confirmed_planned_tutors(capacity, as_of_date, horizon_end)
+            planning_years = {
+                academic_year_for(add_months(month_start(as_of_date), index))
+                for index in range(settings.forecast_months)
+            }
+            programmes = []
+            planned_cohorts = []
+            for planning_year in sorted(planning_years):
+                year_programmes, year_cohorts = fetch_programme_planning(capacity, planning_year)
+                if not programmes:
+                    programmes = year_programmes
+                planned_cohorts.extend(year_cohorts)
             programme_aliases = fetch_programme_aliases(capacity)
         request = build_live_request(
-            as_of_date=date.today(),
+            as_of_date=as_of_date,
             months=settings.forecast_months,
             history_months=settings.forecast_history_months,
             attendance_learners=learners,
@@ -388,8 +400,9 @@ def live_forecast() -> ForecastResponse:
             active_cohort_counts=active_cohort_counts,
             programmes=programmes,
             programme_aliases=programme_aliases,
+            planned_tutors=planned_tutors,
         )
-        return build_forecast(request)
+        return build_forecast(request, programmes=programmes, planned_cohorts=planned_cohorts)
     except Exception:
         logger.exception("Live forecast generation failed")
         raise HTTPException(
@@ -412,9 +425,8 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             )
             tutor_aliases = fetch_tutor_identity_aliases(capacity)
             planning_years = {
-                academic_year_for(as_of_date),
-                academic_year_for(date(as_of_date.year + 1, as_of_date.month, 1)),
-                academic_year_for(date(as_of_date.year + 2, as_of_date.month, 1)),
+                academic_year_for(add_months(month_start(as_of_date), index))
+                for index in range(1, settings.forecast_months + 1)
             }
             programmes = []
             planned_cohorts = []
@@ -426,6 +438,8 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
                     programmes = year_programmes
                 planned_cohorts.extend(year_cohorts)
             programme_aliases = fetch_programme_aliases(capacity)
+            horizon_end = add_months(month_start(as_of_date), settings.forecast_months + 1) - timedelta(days=1)
+            planned_tutors = fetch_confirmed_planned_tutors(capacity, as_of_date, horizon_end)
         request = build_live_request(
             as_of_date=as_of_date,
             months=settings.forecast_months,
@@ -438,6 +452,7 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             tutor_aliases=tutor_aliases,
             programmes=programmes,
             programme_aliases=programme_aliases,
+            planned_tutors=planned_tutors,
         )
         return build_predictive_forecast(
             as_of_date=as_of_date,

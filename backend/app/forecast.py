@@ -11,6 +11,8 @@ from .models import (
     ForecastRequest,
     ForecastResponse,
     PipelineLearner,
+    PlannedCohortRecord,
+    ProgrammePlanningRecord,
     ProgrammeMonth,
     REPORTING_WORKSTREAMS,
     Tutor,
@@ -55,11 +57,13 @@ def active_on(record: AssignedLearner, day: date) -> bool:
 def tutor_capacity_on(tutor: Tutor, day: date) -> int:
     if tutor.available_from is not None and day < tutor.available_from:
         return 0
+    if tutor.available_until is not None and day > tutor.available_until:
+        return 0
     return tutor.capacity
 
 
 def tutor_stream_capacities_on(tutor: Tutor, day: date) -> dict[Workstream, int]:
-    available = tutor.available_from is None or day >= tutor.available_from
+    available = tutor_capacity_on(tutor, day) > 0
     if tutor.programme_allocations:
         capacities: dict[Workstream, int] = {}
         for allocation in tutor.programme_allocations:
@@ -80,7 +84,7 @@ def tutor_stream_capacity_on(
 def tutor_programme_capacities_on(
     tutor: Tutor, day: date
 ) -> dict[str, tuple[str, Workstream, int]]:
-    available = tutor.available_from is None or day >= tutor.available_from
+    available = tutor_capacity_on(tutor, day) > 0
     if tutor.programme_allocations:
         return {
             allocation.programme_code: (
@@ -245,17 +249,74 @@ def peak_count(records: list[AssignedLearner], start: date) -> int:
     )
 
 
-def build_forecast(request: ForecastRequest) -> ForecastResponse:
+def planned_pipeline_learners(
+    request: ForecastRequest,
+    programmes: list[ProgrammePlanningRecord],
+    planned_cohorts: list[PlannedCohortRecord],
+) -> list[PipelineLearner]:
+    """Fill the gap between a programme's intake plan and already known starts."""
+    programme_by_code = {
+        programme.programme_code: programme
+        for programme in programmes
+        if programme.active and programme.workstream in REPORTING_WORKSTREAMS
+    }
+    known_starts: dict[tuple[str, date], set[str]] = {}
+    for learner in (*request.existing_learners, *request.unallocated_existing_learners):
+        if learner.programme_code:
+            key = (learner.programme_code, month_start(learner.start_date))
+            known_starts.setdefault(key, set()).add(learner.learner_id)
+    for learner in request.pipeline_learners:
+        if learner.programme_code:
+            key = (learner.programme_code, month_start(learner.start_date))
+            known_starts.setdefault(key, set()).add(learner.learner_id)
+
+    result: list[PipelineLearner] = []
+    current_month = month_start(request.as_of_date)
+    horizon_end = add_months(current_month, request.months)
+    for cohort in planned_cohorts:
+        programme = programme_by_code.get(cohort.programme_code)
+        start = month_start(cohort.start_month)
+        if programme is None or not current_month <= start < horizon_end:
+            continue
+        known = len(known_starts.get((cohort.programme_code, start), set()))
+        end = month_end(add_months(start, programme.duration_months - 1))
+        for index in range(max(0, cohort.planned_starts - known)):
+            result.append(
+                PipelineLearner(
+                    learner_id=f"planned:{cohort.programme_code}:{start.isoformat()}:{index}",
+                    programme_name=programme.display_name,
+                    workstream=programme.workstream,
+                    start_date=start,
+                    expected_end_date=end,
+                    programme_code=programme.programme_code,
+                )
+            )
+    return result
+
+
+def build_forecast(
+    request: ForecastRequest,
+    *,
+    programmes: list[ProgrammePlanningRecord] | None = None,
+    planned_cohorts: list[PlannedCohortRecord] | None = None,
+) -> ForecastResponse:
     tutors = {
         tutor.tutor_id: tutor
         for tutor in request.tutors
         if tutor.workstream in REPORTING_WORKSTREAMS
+        or any(
+            allocation.workstream in REPORTING_WORKSTREAMS
+            for allocation in tutor.programme_allocations
+        )
     }
     existing = deduplicate_existing(request.existing_learners, tutors)
     pipeline_allocations, unallocated = allocate_pipeline(
         [
             learner
-            for learner in request.pipeline_learners
+            for learner in (
+                *request.pipeline_learners,
+                *planned_pipeline_learners(request, programmes or [], planned_cohorts or []),
+            )
             if learner.workstream in REPORTING_WORKSTREAMS
         ],
         tutors,
@@ -289,6 +350,8 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
             for tutor_workstream, monthly_capacity in tutor_stream_capacities_on(
                 tutor, month
             ).items():
+                if tutor_workstream not in REPORTING_WORKSTREAMS:
+                    continue
                 records = [
                     record
                     for record in all_assigned
@@ -328,6 +391,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     tutor_id=tutor.tutor_id,
                     tutor_name=tutor.tutor_name,
                     workstream=tutor_workstream,
+                    is_planned=tutor.is_planned,
                     capacity=monthly_capacity,
                     active_cohorts=tutor.active_cohorts,
                     opening_caseload=opening,
@@ -350,6 +414,8 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 programme_workstream,
                 programme_capacity,
             ) in tutor_programme_capacities_on(tutor, month).items():
+                if programme_workstream not in REPORTING_WORKSTREAMS:
+                    continue
                 records = [
                     record
                     for record in all_assigned
@@ -366,6 +432,7 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                         tutor_id=tutor.tutor_id,
                         tutor_name=tutor.tutor_name,
                         workstream=programme_workstream,
+                        is_planned=tutor.is_planned,
                         programme_code=programme_code,
                         programme_name=programme_name,
                         capacity=programme_capacity,
@@ -436,11 +503,15 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 tutor_stream_capacity_on(tutor, workstream, month)
                 for tutor in stream_tutors
             )
-            assigned_peak = peak_count(stream_records, month)
-            unallocated_peak = max(
+            projected_peak = max(
                 (
                     len(
                         {
+                            record.learner_id
+                            for record in stream_records
+                            if active_on(record, day)
+                        }
+                        | {
                             record.learner_id
                             for record in stream_unallocated
                             if record.start_date <= day <= record.expected_end_date
@@ -450,7 +521,6 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 ),
                 default=0,
             )
-            projected_peak = assigned_peak + unallocated_peak
             remaining = total_capacity - projected_peak
             stream_rows = [
                 row
@@ -461,7 +531,10 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 WorkstreamMonth(
                     month=month,
                     workstream=workstream,
-                    tutors=len(stream_tutors),
+                    tutors=sum(
+                        tutor_stream_capacity_on(tutor, workstream, month) > 0
+                        for tutor in stream_tutors
+                    ),
                     total_capacity=total_capacity,
                     opening_caseload=sum(row.opening_caseload for row in stream_rows)
                     + len(
@@ -505,11 +578,15 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 programme_workstream,
                 _,
             ) in tutor_programme_capacities_on(tutor, month).items():
+                if programme_workstream not in REPORTING_WORKSTREAMS:
+                    continue
                 programme_definitions[programme_code] = (
                     programme_name,
                     programme_workstream,
                 )
         for record in all_assigned:
+            if record.workstream not in REPORTING_WORKSTREAMS:
+                continue
             programme_definitions.setdefault(
                 record.programme_code,
                 (programme_display_name(record.programme_code), record.workstream),
@@ -556,10 +633,15 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                 )
                 for tutor in programme_tutors
             )
-            projected_peak = peak_count(assigned_records, month) + max(
+            projected_peak = max(
                 (
                     len(
                         {
+                            record.learner_id
+                            for record in assigned_records
+                            if active_on(record, day)
+                        }
+                        | {
                             record.learner_id
                             for record in all_unallocated
                             if record.start_date <= day <= record.expected_end_date
@@ -581,7 +663,12 @@ def build_forecast(request: ForecastRequest) -> ForecastResponse:
                     workstream=programme_workstream,
                     programme_code=programme_code,
                     programme_name=programme_name,
-                    tutors=len(programme_tutors),
+                    tutors=sum(
+                        tutor_programme_capacity_on(
+                            tutor, programme_code, programme_workstream, month
+                        ) > 0
+                        for tutor in programme_tutors
+                    ),
                     total_capacity=total_capacity,
                     opening_caseload=sum(
                         row.opening_caseload for row in programme_rows

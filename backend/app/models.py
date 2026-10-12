@@ -59,6 +59,8 @@ class Tutor(BaseModel):
     capacity: int = Field(default=50, ge=0, le=250)
     active_cohorts: int = Field(default=0, ge=0)
     available_from: date | None = None
+    available_until: date | None = None
+    is_planned: bool = False
     programme_allocations: list[TutorCapacityAllocation] = Field(default_factory=list)
 
 
@@ -127,6 +129,7 @@ class TutorMonth(BaseModel):
     tutor_id: str
     tutor_name: str
     workstream: Workstream
+    is_planned: bool = False
     capacity: int
     active_cohorts: int = Field(default=0, ge=0)
     opening_caseload: int

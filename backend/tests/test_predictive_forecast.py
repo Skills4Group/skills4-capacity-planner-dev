@@ -7,6 +7,8 @@ from app.models import (
     ForecastRequest,
     LearnerStatus,
     ProgrammePlanningRecord,
+    PlannedCohortRecord,
+    PipelineLearner,
     Tutor,
     Workstream,
 )
@@ -229,3 +231,73 @@ def test_predictive_rows_separate_pharmacy_l2_from_general() -> None:
     assert l2.existing_active_learners == 1
     assert l2.scheduled_finishes == 1
     assert general.existing_active_learners == 0
+
+
+def test_cross_workstream_learner_counts_in_its_own_workstream() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 8, 14), months=1,
+        tutors=[Tutor(tutor_id="T1", tutor_name="Cross-stream tutor", workstream=Workstream.PHARMACY)],
+        existing_learners=[ExistingLearner(
+            learner_id="D1", tutor_id="T1", programme_name="Dental Nurse",
+            workstream=Workstream.DENTAL, start_date=date(2026, 1, 1),
+            expected_end_date=date(2027, 1, 1), status=LearnerStatus.IN_PROGRESS,
+        )], pipeline_learners=[],
+    )
+    result = build_predictive_forecast(
+        as_of_date=request.as_of_date, months=1, attendance_learners=[],
+        forecast_request=request, programme_mappings={},
+    )
+    assert next(row for row in result.workstream_months if row.workstream == Workstream.DENTAL).existing_active_learners == 1
+    assert next(row for row in result.workstream_months if row.workstream == Workstream.PHARMACY).existing_active_learners == 0
+
+
+def test_workstream_starts_include_combined_programme_minimums() -> None:
+    programmes = [
+        ProgrammePlanningRecord(programme_code=code, display_name=code,
+                                workstream=Workstream.PHARMACY, duration_months=18, active=True)
+        for code in ("pharmacy-l2", "pharmacy-l3")
+    ]
+    request = ForecastRequest(
+        as_of_date=date(2026, 10, 1), months=1, tutors=[], existing_learners=[],
+        pipeline_learners=[PipelineLearner(
+            learner_id=f"L{i}", programme_name="Pharmacy L2", programme_code="pharmacy-l2",
+            workstream=Workstream.PHARMACY, start_date=date(2026, 11, 1),
+            expected_end_date=date(2027, 11, 1),
+        ) for i in range(15)],
+    )
+    result = build_predictive_forecast(
+        as_of_date=request.as_of_date, months=1, attendance_learners=[],
+        forecast_request=request, programme_mappings={}, programmes=programmes,
+        planned_cohorts=[PlannedCohortRecord(
+            programme_code="pharmacy-l3", start_month=date(2026, 11, 1),
+            academic_year="2026/27", planned_starts=20,
+        )],
+    )
+    stream = next(row for row in result.workstream_months if row.workstream == Workstream.PHARMACY)
+    programme_rows = [row for row in result.programme_months if row.workstream == Workstream.PHARMACY]
+    assert stream.predicted_starts_p50 == sum(row.predicted_starts_p50 for row in programme_rows) == 35
+    assert stream.predicted_active_p50 == sum(row.predicted_active_p50 for row in programme_rows) == 35
+
+
+def test_future_dated_attendance_starter_is_not_counted_twice() -> None:
+    programme = ProgrammePlanningRecord(
+        programme_code="pharmacy-l2", display_name="Pharmacy L2",
+        workstream=Workstream.PHARMACY, duration_months=15, active=True,
+    )
+    learner = ExistingLearner(
+        learner_id="FUTURE", tutor_id="T-PHA", programme_name="Pharmacy L2",
+        programme_code="pharmacy-l2", workstream=Workstream.PHARMACY,
+        start_date=date(2026, 9, 1), expected_end_date=date(2027, 11, 30),
+        status=LearnerStatus.IN_PROGRESS,
+    )
+    request = build_request([learner])
+    response = build_predictive_forecast(
+        as_of_date=date(2026, 8, 14), months=1, attendance_learners=[],
+        forecast_request=request, programme_mappings={}, programmes=[programme],
+    )
+    stream = next(row for row in response.workstream_months if row.workstream == Workstream.PHARMACY)
+    programme_row = response.programme_months[0]
+    assert stream.existing_active_learners == 1
+    assert stream.predicted_starts_p50 == 1
+    assert stream.predicted_active_p50 == 1
+    assert programme_row.predicted_active_p50 == 1

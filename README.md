@@ -10,8 +10,12 @@ Dashboard workstream cards show monthly utilisation as
 `projected workstream learners / effective workstream capacity * 100`, rounded to one
 decimal place. The All workstreams figure is calculated from total demand divided by
 total capacity, so it is capacity weighted rather than an average of percentages.
-When a dashboard capacity scenario is open, the cards recalculate using tutor count
-multiplied by the scenario capacity. Demand with zero capacity is labelled
+When a dashboard capacity scenario is open, each available tutor's scenario maximum
+is distributed across their existing workstream/programme allocations. Tutors with
+zero effective capacity remain unavailable, and a tutor teaching two workstreams
+counts once in the staff total. Headline demand includes allocated and unallocated
+learners and does not change when the tutor-directory search is used. Demand with
+zero capacity is labelled
 `No capacity` rather than `0% utilised`.
 
 The Utilisation tab's 6-, 12-, and 18-month horizons remove months earlier than the
@@ -36,19 +40,40 @@ additional tutor. Scenario values are browser-local state and are never persiste
 
 Administrators can maintain planned starts for every programme and month in an
 academic year (September through August), together with a programme-specific
-duration of 3–60 months. A planned programme intake becomes a minimum for its parent
-workstream's monthly start forecast, alongside known Bud/CRM pipeline starts:
+duration of 3–60 months. For each programme, its planned intake and known Bud/CRM
+pipeline are minimums; the parent workstream cannot forecast fewer starts than
+the sum of its programme forecasts:
 
 ```text
-forecast_starts = max(statistical_starts, known_pipeline_starts, planned_programme_starts)
+programme_starts_k = max(programme_statistical_starts_k,
+                         programme_pipeline_starts, programme_planned_starts,
+                         future_dated_Attendance_starts)
+workstream_starts_k = max(workstream_statistical_starts_k,
+                          workstream_pipeline_starts, workstream_planned_starts,
+                          future_dated_Attendance_starts,
+                          sum(programme_starts_k) + unclassified_known_starts)
 ```
 
-Where a month contains planned programme starts, the cohort duration is the
-start-weighted average of those programmes' configured durations. Otherwise the
-model uses the configured average for active programmes in the workstream. This
-keeps Pharmacy L2, Pharmacy L3, and Technical Services planning distinct while
-retaining the existing workstream-level staffing output. Plans are stored in the
+Programme cohorts remain active for their own configured duration. Any excess
+workstream-level statistical or unclassified starts use the workstream duration
+(the start-weighted planned duration where a plan exists, otherwise the configured
+average). Thus Pharmacy L2, Pharmacy L3, and Technical Services planning remains
+distinct. Future-dated Attendance starters are already included in existing active
+learners, so they are subtracted from projected cohorts to prevent double counting.
+Aggregate starts can exceed the displayed programme sum when source history or
+pipeline has no programme classification. Plans are stored in the
 Capacity database only.
+
+The rolling forecast also uses the planned-cohort count as a *minimum* for each
+programme/month. It creates only the difference after already known Attendance
+and Bud/CRM starts, so a plan is not added twice. Those additional learners stay
+in demand for that programme's configured duration. Confirmed planned tutors with
+programme allocations contribute capacity from their start month through their
+end month; tentative or cancelled planned tutors do not. Existing Attendance tutors
+linked to a planned tutor record are not counted twice. Planned tutors whose
+programme allocations do not sum to their maximum capacity are excluded and logged
+until corrected. The Forecast tab labels these figures as available/confirmed staff,
+not staff already employed today. Attendance remains read-only.
 
 The Predictive Forecasting tab estimates future starts and active learner demand
 from up to 36 complete months of Attendance start-date history. It blends recent
@@ -141,7 +166,15 @@ forecast, which avoids counting the same expected demand twice. For confidence l
 `k` (`P50`, `P80`, or `P90`):
 
 ```text
-forecast_starts_(h,k) = max(statistical_starts_(h,k), known_pipeline_starts_h)
+programme_starts_(h,k) = max(programme_statistical_starts_(h,k),
+                              programme_pipeline_starts_h,
+                              programme_planned_starts_h,
+                              future_dated_Attendance_starts_h)
+workstream_starts_(h,k) = max(workstream_statistical_starts_(h,k),
+                              workstream_pipeline_starts_h,
+                              workstream_planned_starts_h,
+                              future_dated_Attendance_starts_h,
+                              sum(programme_starts_(h,k)) + unclassified_known_starts_h)
 ```
 
 #### 6. Convert starts into active learner demand
@@ -158,8 +191,11 @@ existing_active_h = count(distinct learners where
                           start_date <= month_end_h and
                           expected_end_date >= month_start_h)
 
-forecast_cohorts_(h,k) = sum(forecast_starts_(j,k))
-                         for all j <= h where (h - j) < D
+forecast_cohorts_(h,k) = sum(programme_starts_(j,k)
+                             - future_dated_Attendance_starts_j) for each programme
+                         while (h - j) < that programme's configured duration
+                         + residual workstream starts, less unclassified
+                           future-dated Attendance starts, while (h - j) < D
 
 predicted_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
 ```
@@ -168,8 +204,11 @@ predicted_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
 
 Effective capacity is the sum of tutor capacity settings in that workstream. A tutor
 marked as on maternity leave contributes zero until the configured return month,
-when their saved capacity is restored. Operations tutors and learners contribute
-nothing. Other current tutor settings remain constant over the forecast horizon.
+when their saved capacity is restored. This rule also applies to programme
+allocations: a zero-capacity tutor cannot regain capacity through an allocation.
+Confirmed planned tutors enter and leave capacity on their configured dates.
+Operations tutors and learners contribute nothing. Other current tutor settings
+remain constant over the forecast horizon.
 
 ```text
 effective_capacity = sum(effective tutor capacities in the workstream)

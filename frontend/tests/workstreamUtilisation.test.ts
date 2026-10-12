@@ -43,10 +43,10 @@ test('all-workstream utilisation is capacity weighted', () => {
   assert.equal(metric.percent, 73.3)
 })
 
-test('scenario capacity updates workstream utilisation by tutor count', () => {
+test('uses the modeled capacity supplied by available tutor allocations', () => {
   const metric = calculateWorkstreamUtilisation([
-    row({ tutors: 3, total_capacity: 125, peak_projected_caseload: 108 }),
-  ], 40)
+    row({ tutors: 3, total_capacity: 120, peak_projected_caseload: 108 }),
+  ])
 
   assert.equal(metric.capacity, 120)
   assert.equal(metric.remaining, 12)

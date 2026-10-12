@@ -13,12 +13,9 @@ export interface WorkstreamUtilisationMetric {
 
 export function calculateWorkstreamUtilisation(
   rows: WorkstreamMonth[],
-  scenarioCapacityPerTutor?: number,
 ): WorkstreamUtilisationMetric {
   const capacity = rows.reduce(
-    (sum, row) => sum + (scenarioCapacityPerTutor === undefined
-      ? row.total_capacity
-      : row.tutors * scenarioCapacityPerTutor),
+    (sum, row) => sum + row.total_capacity,
     0,
   )
   const learners = rows.reduce((sum, row) => sum + row.peak_projected_caseload, 0)

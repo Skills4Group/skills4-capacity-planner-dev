@@ -280,7 +280,7 @@ def build_predictive_forecast(
     for learner in forecast_request.existing_learners:
         tutor = tutors.get(learner.tutor_id)
         if tutor and learner.status.value in valid_statuses:
-            existing_by_stream[tutor.workstream].append(learner)
+            existing_by_stream[learner.workstream or tutor.workstream].append(learner)
             programme_code = learner.programme_code or resolve_programme_code(
                 learner.programme_name,
                 workstream=learner.workstream or tutor.workstream,
@@ -304,6 +304,23 @@ def build_predictive_forecast(
             if programme_code:
                 existing_by_programme[programme_code].append(learner)
 
+    existing_start_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
+    programme_existing_start_counts: dict[str, Counter[date]] = defaultdict(Counter)
+    for workstream, learners in existing_by_stream.items():
+        starts: dict[date, set[str]] = defaultdict(set)
+        for learner in learners:
+            starts[month_start(learner.start_date)].add(learner.learner_id)
+        existing_start_counts[workstream].update(
+            {month: len(ids) for month, ids in starts.items()}
+        )
+    for programme_code, learners in existing_by_programme.items():
+        starts: dict[date, set[str]] = defaultdict(set)
+        for learner in learners:
+            starts[month_start(learner.start_date)].add(learner.learner_id)
+        programme_existing_start_counts[programme_code].update(
+            {month: len(ids) for month, ids in starts.items()}
+        )
+
     pipeline_counts: dict[Workstream, Counter[date]] = defaultdict(Counter)
     programme_pipeline_counts: dict[str, Counter[date]] = defaultdict(Counter)
     for learner in forecast_request.pipeline_learners:
@@ -319,6 +336,28 @@ def build_predictive_forecast(
                 programme_pipeline_counts[programme_code][
                     month_start(learner.start_date)
                 ] += 1
+
+    # Forecast programme demand first so a workstream cannot lose starts when
+    # different programmes each have their own known or planned minimum.
+    programme_starts: dict[str, dict[str, list[int]]] = {}
+    for programme in programmes:
+        if programme.workstream not in REPORTING_WORKSTREAMS:
+            continue
+        values = [
+            programme_history_counts[programme.programme_code][month]
+            for month in training_months
+        ]
+        starts_by_level = {level: [] for level in ("p50", "p80", "p90")}
+        for index, month in enumerate(forecast_months):
+            estimates = _start_distribution(training_months, values, month, index)
+            minimum = max(
+                programme_pipeline_counts[programme.programme_code][month],
+                programme_planned_counts[programme.programme_code][month],
+                programme_existing_start_counts[programme.programme_code][month],
+            )
+            for level, estimate in zip(starts_by_level, estimates):
+                starts_by_level[level].append(max(estimate, minimum))
+        programme_starts[programme.programme_code] = starts_by_level
 
     rows: list[PredictiveWorkstreamMonth] = []
     summaries: list[PredictiveWorkstreamSummary] = []
@@ -344,10 +383,34 @@ def build_predictive_forecast(
             )
             known_starts = pipeline_counts[workstream][month]
             planned_starts = planned_counts[workstream][month]
+            existing_starts = existing_start_counts[workstream][month]
+            stream_programmes = [
+                programme for programme in programmes
+                if programme.workstream == workstream
+                and programme.programme_code in programme_starts
+            ]
+            unclassified_known = max(
+                0,
+                known_starts - sum(
+                    programme_pipeline_counts[programme.programme_code][month]
+                    for programme in stream_programmes
+                ),
+                existing_starts - sum(
+                    programme_existing_start_counts[programme.programme_code][month]
+                    for programme in stream_programmes
+                ),
+            )
+            programme_totals = {
+                level: sum(
+                    programme_starts[programme.programme_code][level][index]
+                    for programme in stream_programmes
+                )
+                for level in ("p50", "p80", "p90")
+            }
             starts = {
-                "p50": max(p50, known_starts, planned_starts),
-                "p80": max(p80, known_starts, planned_starts),
-                "p90": max(p90, known_starts, planned_starts),
+                "p50": max(p50, known_starts, planned_starts, existing_starts, programme_totals["p50"] + unclassified_known),
+                "p80": max(p80, known_starts, planned_starts, existing_starts, programme_totals["p80"] + unclassified_known),
+                "p90": max(p90, known_starts, planned_starts, existing_starts, programme_totals["p90"] + unclassified_known),
             }
             predicted_durations.append(
                 round(
@@ -377,11 +440,36 @@ def build_predictive_forecast(
 
             active = {}
             for key in ("p50", "p80", "p90"):
-                cohort_total = sum(
-                    predicted_starts[key][cohort_index]
-                    for cohort_index in range(index + 1)
-                    if index - cohort_index < predicted_durations[cohort_index]
-                )
+                cohort_total = 0
+                for cohort_index in range(index + 1):
+                    programme_cohort = sum(
+                        max(
+                            0,
+                            programme_starts[programme.programme_code][key][cohort_index]
+                            - programme_existing_start_counts[programme.programme_code][forecast_months[cohort_index]],
+                        )
+                        for programme in stream_programmes
+                        if index - cohort_index < programme.duration_months
+                    )
+                    residual = max(
+                        0,
+                        predicted_starts[key][cohort_index]
+                        - sum(
+                            programme_starts[programme.programme_code][key][cohort_index]
+                            for programme in stream_programmes
+                        ),
+                    )
+                    cohort_total += programme_cohort
+                    if index - cohort_index < predicted_durations[cohort_index]:
+                        unclassified_existing = max(
+                            0,
+                            existing_start_counts[workstream][forecast_months[cohort_index]]
+                            - sum(
+                                programme_existing_start_counts[programme.programme_code][forecast_months[cohort_index]]
+                                for programme in stream_programmes
+                            ),
+                        )
+                        cohort_total += max(0, residual - unclassified_existing)
                 active[key] = existing_active + cohort_total
 
             capacity = sum(
@@ -486,15 +574,10 @@ def build_predictive_forecast(
         stream_programme_rows: list[PredictiveProgrammeMonth] = []
 
         for index, month in enumerate(forecast_months):
-            p50, p80, p90 = _start_distribution(
-                training_months, values, month, index
-            )
             known_starts = programme_pipeline_counts[programme_code][month]
-            planned_starts = programme_planned_counts[programme_code][month]
             starts = {
-                "p50": max(p50, known_starts, planned_starts),
-                "p80": max(p80, known_starts, planned_starts),
-                "p90": max(p90, known_starts, planned_starts),
+                level: programme_starts[programme_code][level][index]
+                for level in ("p50", "p80", "p90")
             }
             for key in predicted_starts:
                 predicted_starts[key].append(starts[key])
@@ -517,7 +600,11 @@ def build_predictive_forecast(
             active = {}
             for key in ("p50", "p80", "p90"):
                 cohort_total = sum(
-                    predicted_starts[key][cohort_index]
+                    max(
+                        0,
+                        predicted_starts[key][cohort_index]
+                        - programme_existing_start_counts[programme_code][forecast_months[cohort_index]],
+                    )
                     for cohort_index in range(index + 1)
                     if index - cohort_index < programme.duration_months
                 )
@@ -625,8 +712,8 @@ def build_predictive_forecast(
 
     warnings = [
         "Predictions use each learner's latest Attendance record; historical status-transition dates are not available.",
-        "The current partial month is excluded from training. Capacity changes at configured maternity return months; other current tutor settings are held constant.",
-            "Known pipeline and planned programme starts are used as minimums where they exceed the statistical prediction.",
+        "The current partial month is excluded from training. Capacity changes at configured maternity return months and confirmed planned tutor dates; other current tutor settings are held constant.",
+        "Known pipeline, future-dated Attendance starts and planned programme starts are minimums rather than additions to the statistical prediction.",
     ]
     if missing_start:
         warnings.append(

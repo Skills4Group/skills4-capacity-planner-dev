@@ -16,6 +16,7 @@ import {
   workstreamForFilter,
 } from './reportingFilters'
 import { calculateWorkstreamUtilisation } from './workstreamUtilisation'
+import { distinctAvailableTutors, modelAggregateCapacity, modelTutorCapacity } from './forecastMetrics'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
@@ -103,13 +104,15 @@ function App() {
     return () => window.clearInterval(timer)
   }, [refreshTutorDiscovery])
 
-  const monthRows = useMemo(() => (
-    isProgrammeFilter(selectedWorkstream)
-      ? forecast.tutor_programme_months.filter(
-        (row) => row.month === selectedMonth && row.programme_code === selectedWorkstream,
-      )
-      : forecast.tutor_months.filter((row) => row.month === selectedMonth)
-  ), [forecast, selectedMonth, selectedWorkstream])
+  const monthTutorRows = forecast.tutor_months.filter((row) => row.month === selectedMonth)
+  const monthProgrammeTutorRows = forecast.tutor_programme_months.filter((row) => row.month === selectedMonth)
+  const modeledTutorRows = scenarioOpen ? modelTutorCapacity(monthTutorRows, capacityOverride) : monthTutorRows
+  const modeledProgrammeTutorRows = scenarioOpen
+    ? modelTutorCapacity(monthProgrammeTutorRows, capacityOverride)
+    : monthProgrammeTutorRows
+  const monthRows = isProgrammeFilter(selectedWorkstream)
+    ? modeledProgrammeTutorRows.filter((row) => row.programme_code === selectedWorkstream)
+    : modeledTutorRows
   const visibleRows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return monthRows.filter(
@@ -120,33 +123,37 @@ function App() {
         (!query || row.tutor_name.toLowerCase().includes(query)),
     )
   }, [monthRows, search, selectedWorkstream])
-  const scenarioRows = visibleRows.map((row) => {
-    if (!scenarioOpen) return row
-    return {
-      ...row,
-      capacity: capacityOverride,
-      remaining_capacity: capacityOverride - row.peak_caseload,
-      utilisation_percent: Math.round((row.peak_caseload / capacityOverride) * 1000) / 10,
-    }
-  })
+  const scenarioRows = visibleRows
+  const allStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
+  const allProgrammeRows = forecast.programme_months.filter((row) => row.month === selectedMonth)
+  const modeledStreamRows = scenarioOpen
+    ? modelAggregateCapacity(allStreamRows, modeledTutorRows, capacityOverride)
+    : allStreamRows
+  const modeledProgrammeRows = scenarioOpen
+    ? modelAggregateCapacity(allProgrammeRows, modeledProgrammeTutorRows, capacityOverride)
+    : allProgrammeRows
+  const selectedAggregateRows = isProgrammeFilter(selectedWorkstream)
+    ? modeledProgrammeRows.filter((row) => row.programme_code === selectedWorkstream)
+    : modeledStreamRows.filter((row) => selectedWorkstream === 'All' || row.workstream === selectedWorkstream)
+  const selectedTutorRows = isProgrammeFilter(selectedWorkstream)
+    ? monthProgrammeTutorRows.filter((row) => row.programme_code === selectedWorkstream)
+    : monthTutorRows.filter((row) => selectedWorkstream === 'All' || row.workstream === selectedWorkstream)
   const summary = useMemo(() => {
-    const capacity = scenarioRows.reduce((sum, row) => sum + row.capacity, 0)
-    const learners = scenarioRows.reduce((sum, row) => sum + row.peak_caseload, 0)
+    const capacity = selectedAggregateRows.reduce((sum, row) => sum + row.total_capacity, 0)
+    const learners = selectedAggregateRows.reduce((sum, row) => sum + row.peak_projected_caseload, 0)
     const remaining = capacity - learners
     return {
-      tutors: scenarioRows.length,
+      tutors: distinctAvailableTutors(selectedTutorRows),
       capacity,
       learners,
       remaining,
-      utilisation: capacity ? Math.round((learners / capacity) * 1000) / 10 : 0,
-      required: Math.ceil(Math.max(0, -remaining) / capacityOverride),
+      utilisation: capacity ? Math.round((learners / capacity) * 1000) / 10 : learners > 0 ? null : 0,
+      required: selectedAggregateRows.reduce((sum, row) => sum + row.additional_tutors_required, 0),
     }
-  }, [capacityOverride, scenarioRows])
-  const allStreamRows = forecast.workstream_months.filter((row) => row.month === selectedMonth)
+  }, [selectedAggregateRows, selectedTutorRows])
   const monthOptions = selectMonthOptions(forecast.months)
   const currentMonth = localMonthKey()
-  const scenarioTutorCapacity = scenarioOpen ? capacityOverride : undefined
-  const allWorkstreamUtilisation = calculateWorkstreamUtilisation(allStreamRows, scenarioTutorCapacity)
+  const allWorkstreamUtilisation = calculateWorkstreamUtilisation(modeledStreamRows)
   const trendRows = selectRollingMonths(forecast.months, 18).map((month) => {
     const rows = isProgrammeFilter(selectedWorkstream)
       ? forecast.programme_months.filter(
@@ -248,7 +255,7 @@ function App() {
           <article className="summary-card featured"><p>Remaining capacity</p><strong>{summary.remaining}</strong><span>{summary.remaining >= 0 ? 'learner places available' : 'learner places short'}</span><i>01</i></article>
           <article className="summary-card"><p>Projected learners</p><strong>{summary.learners}</strong><span>at monthly peak</span><i>02</i></article>
           <article className="summary-card"><p>Total capacity</p><strong>{summary.capacity}</strong><span>across {summary.tutors} tutors</span><i>03</i></article>
-          <article className="summary-card"><p>Utilisation</p><strong>{summary.utilisation}%</strong><span>{summary.required ? `${summary.required} additional tutors required` : 'within available capacity'}</span><i>04</i></article>
+          <article className="summary-card"><p>Utilisation</p><strong>{summary.utilisation === null ? 'No capacity' : `${summary.utilisation}%`}</strong><span>{summary.required ? `${summary.required} additional tutors required` : 'within available capacity'}</span><i>04</i></article>
         </section>
 
         {scenarioOpen && (
@@ -262,13 +269,9 @@ function App() {
           <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{allWorkstreamUtilisation.remaining} places</strong><small className={`workstream-utilisation ${allWorkstreamUtilisation.tone}`}>{allWorkstreamUtilisation.label}</small></button>
           {reportingFilterOptions.slice(1).map((filter) => {
             const row = isProgrammeFilter(filter)
-              ? forecast.programme_months.find(
-                (item) => item.month === selectedMonth && item.programme_code === filter,
-              )
-              : forecast.workstream_months.find(
-                (item) => item.month === selectedMonth && item.workstream === filter,
-              )
-            const utilisation = calculateWorkstreamUtilisation(row ? [row] : [], scenarioTutorCapacity)
+              ? modeledProgrammeRows.find((item) => item.programme_code === filter)
+              : modeledStreamRows.find((item) => item.workstream === filter)
+            const utilisation = calculateWorkstreamUtilisation(row ? [row] : [])
             return <button key={filter} data-stream={workstreamForFilter(filter) ?? undefined} className={selectedWorkstream === filter ? 'active' : ''} onClick={() => setSelectedWorkstream(filter)}><span>{reportingFilterLabels[filter]}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label}</small></button>
           })}
         </section>
