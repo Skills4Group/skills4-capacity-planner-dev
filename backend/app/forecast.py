@@ -7,6 +7,9 @@ from math import ceil
 
 from .models import (
     CAPACITY_CONSUMING_STATUSES,
+    CurrentCapacitySnapshot,
+    CurrentProgrammeSnapshot,
+    CurrentWorkstreamSnapshot,
     ExistingLearner,
     ForecastRequest,
     ForecastResponse,
@@ -709,6 +712,104 @@ def build_forecast(
                 )
             )
 
+    today = request.as_of_date
+    current_workstream_snapshots: list[CurrentWorkstreamSnapshot] = []
+    for workstream in REPORTING_WORKSTREAMS:
+        capacity = sum(
+            tutor_stream_capacity_on(tutor, workstream, today)
+            for tutor in tutors.values()
+        )
+        learner_ids = {
+            record.learner_id
+            for record in existing
+            if record.workstream == workstream and active_on(record, today)
+        } | {
+            record.learner_id
+            for record in unallocated_existing
+            if record.workstream == workstream
+            and record.start_date <= today <= record.expected_end_date
+        }
+        learners = len(learner_ids)
+        current_workstream_snapshots.append(
+            CurrentWorkstreamSnapshot(
+                workstream=workstream,
+                learners=learners,
+                capacity=capacity,
+                tutors=sum(
+                    tutor_stream_capacity_on(tutor, workstream, today) > 0
+                    for tutor in tutors.values()
+                ),
+                remaining_places=capacity - learners,
+                utilisation_percent=round(learners / capacity * 100, 1) if capacity else None,
+            )
+        )
+
+    current_capacity = sum(row.capacity for row in current_workstream_snapshots)
+    current_learner_ids = {
+        record.learner_id
+        for record in existing
+        if record.workstream in REPORTING_WORKSTREAMS and active_on(record, today)
+    } | {
+        record.learner_id
+        for record in unallocated_existing
+        if record.start_date <= today <= record.expected_end_date
+    }
+    current_learners = len(current_learner_ids)
+    current_total_snapshot = CurrentCapacitySnapshot(
+        learners=current_learners,
+        capacity=current_capacity,
+        tutors=sum(
+            any(
+                tutor_stream_capacity_on(tutor, workstream, today) > 0
+                for workstream in REPORTING_WORKSTREAMS
+            )
+            for tutor in tutors.values()
+        ),
+        remaining_places=current_capacity - current_learners,
+        utilisation_percent=(
+            round(current_learners / current_capacity * 100, 1)
+            if current_capacity else None
+        ),
+    )
+
+    current_programme_snapshots: list[CurrentProgrammeSnapshot] = []
+    current_month = month_start(today)
+    current_programmes = {
+        row.programme_code: row.workstream
+        for row in programme_months
+        if row.month == current_month
+    }
+    for programme_code, workstream in current_programmes.items():
+        capacity = sum(
+            tutor_programme_capacity_on(tutor, programme_code, workstream, today)
+            for tutor in tutors.values()
+        )
+        learner_ids = {
+            record.learner_id
+            for record in existing
+            if record.programme_code == programme_code and active_on(record, today)
+        } | {
+            record.learner_id
+            for record in unallocated_existing
+            if record.programme_code == programme_code
+            and record.start_date <= today <= record.expected_end_date
+        }
+        learners = len(learner_ids)
+        current_programme_snapshots.append(
+            CurrentProgrammeSnapshot(
+                workstream=workstream,
+                programme_code=programme_code,
+                learners=learners,
+                capacity=capacity,
+                tutors=sum(
+                    tutor_programme_capacity_on(tutor, programme_code, workstream, today) > 0
+                    for tutor in tutors.values()
+                ),
+                remaining_places=capacity - learners,
+                utilisation_percent=round(learners / capacity * 100, 1) if capacity else None,
+            )
+        )
+
     return ForecastResponse(
         generated_at=request.as_of_date,
         months=months,
@@ -716,5 +817,8 @@ def build_forecast(
         workstream_months=workstream_months,
         tutor_programme_months=tutor_programme_months,
         programme_months=programme_months,
+        current_total_snapshot=current_total_snapshot,
+        current_workstream_snapshots=current_workstream_snapshots,
+        current_programme_snapshots=current_programme_snapshots,
         unallocated_learners=[*unallocated, *unallocated_existing],
     )

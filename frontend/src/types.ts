@@ -55,6 +55,22 @@ export interface ProgrammeMonth extends WorkstreamMonth {
   programme_name: string
 }
 
+export interface CurrentCapacitySnapshot {
+  learners: number
+  capacity: number
+  tutors: number
+  remaining_places: number
+  utilisation_percent: number | null
+}
+
+export interface CurrentWorkstreamSnapshot extends CurrentCapacitySnapshot {
+  workstream: Workstream
+}
+
+export interface CurrentProgrammeSnapshot extends CurrentWorkstreamSnapshot {
+  programme_code: string
+}
+
 export interface ForecastResponse {
   generated_at: string
   months: string[]
@@ -62,6 +78,9 @@ export interface ForecastResponse {
   workstream_months: WorkstreamMonth[]
   tutor_programme_months: TutorProgrammeMonth[]
   programme_months: ProgrammeMonth[]
+  current_total_snapshot?: CurrentCapacitySnapshot | null
+  current_workstream_snapshots?: CurrentWorkstreamSnapshot[]
+  current_programme_snapshots?: CurrentProgrammeSnapshot[]
   unallocated_learners: Array<{
     learner_id: string
     workstream: Workstream

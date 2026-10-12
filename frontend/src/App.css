@@ -301,7 +301,7 @@ main {
 
 .summary-card {
   position: relative;
-  min-height: 126px;
+  min-height: 150px;
   padding: 20px 22px;
   overflow: hidden;
   border: 1px solid #dce0e8;
@@ -330,6 +330,22 @@ main {
   margin-top: auto;
   padding-top: 12px;
   color: #7c8496;
+  font-size: 10px;
+}
+
+.summary-card .snapshot-note {
+  display: block;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid #eef0f5;
+  color: #4b5568;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.dashboard-metric-note {
+  margin: -9px 0 18px;
+  color: #6f7789;
   font-size: 10px;
 }
 
@@ -386,7 +402,7 @@ main {
 
 .workstream-strip {
   display: grid;
-  grid-template-columns: 1.2fr repeat(8, minmax(125px, 1fr));
+  grid-template-columns: 1.2fr repeat(7, minmax(140px, 1fr));
   gap: 9px;
   margin-bottom: 20px;
   overflow-x: auto;
@@ -452,6 +468,16 @@ main {
 
 .workstream-strip .workstream-utilisation.over {
   color: #b63853;
+}
+
+.workstream-strip .workstream-current {
+  display: block;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid #eef0f5;
+  color: #596275;
+  font-size: 8px;
+  line-height: 1.45;
 }
 
 .forecast-card,

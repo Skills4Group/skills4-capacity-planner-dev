@@ -10,6 +10,15 @@ Dashboard workstream cards show monthly utilisation as
 `projected workstream learners / effective workstream capacity * 100`, rounded to one
 decimal place. The All workstreams figure is calculated from total demand divided by
 total capacity, so it is capacity weighted rather than an average of percentages.
+For a selected month, projected learners are the maximum daily caseload in that
+month, while capacity is the tutor allocation effective on the **first day** of
+that month; it is not a day-by-day capacity denominator. The four headline cards
+and workstream cards also show a separate current snapshot as of the forecast's
+generation date: capacity-consuming Attendance learners represented in the forecast and active on that date,
+capacity available on that exact date, remaining places, and utilisation. Known
+pipeline and planned starters are excluded from this current-learner snapshot.
+The Pharmacy (general) dashboard card is hidden; its filter remains available on
+other screens, while Pharmacy (all), Pharmacy L2, and Pharmacy L3 remain visible.
 When a dashboard capacity scenario is open, each available tutor's scenario maximum
 is distributed across their existing workstream/programme allocations. Tutors with
 zero effective capacity remain unavailable, and a tutor teaching two workstreams

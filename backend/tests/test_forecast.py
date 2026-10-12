@@ -10,6 +10,7 @@ from app.models import (
     ProgrammePlanningRecord,
     Tutor,
     TutorCapacityAllocation,
+    UnallocatedExistingLearner,
     Workstream,
 )
 
@@ -34,6 +35,80 @@ def test_break_learners_do_not_use_capacity() -> None:
     result = build_forecast(request)
     assert result.tutor_months[0].peak_caseload == 0
     assert result.tutor_months[0].remaining_capacity == 50
+
+
+def test_current_snapshot_uses_as_of_day_and_excludes_pipeline_and_breaks() -> None:
+    request = ForecastRequest(
+        as_of_date=date(2026, 10, 12), months=1,
+        tutors=[Tutor(
+            tutor_id="T1", tutor_name="Returning tutor", workstream=Workstream.PHARMACY,
+            capacity=50, available_from=date(2026, 10, 10),
+            programme_allocations=[TutorCapacityAllocation(
+                programme_code="pharmacy-l3", programme_name="Pharmacy L3",
+                workstream=Workstream.PHARMACY, capacity=50,
+            )],
+        )],
+        existing_learners=[
+            ExistingLearner(
+                learner_id="active", tutor_id="T1", programme_name="Pharmacy L3",
+                programme_code="pharmacy-l3", workstream=Workstream.PHARMACY,
+                start_date=date(2026, 10, 2), expected_end_date=date(2026, 10, 20),
+                status=LearnerStatus.IN_PROGRESS,
+            ),
+            ExistingLearner(
+                learner_id="break", tutor_id="T1", programme_name="Pharmacy L3",
+                programme_code="pharmacy-l3", workstream=Workstream.PHARMACY,
+                start_date=date(2026, 9, 1), expected_end_date=date(2027, 1, 1),
+                status=LearnerStatus.ON_BREAK,
+            ),
+        ],
+        unallocated_existing_learners=[UnallocatedExistingLearner(
+            learner_id="unallocated", programme_name="Pharmacy L3",
+            programme_code="pharmacy-l3", workstream=Workstream.PHARMACY,
+            start_date=date(2026, 9, 1), expected_end_date=date(2027, 1, 1),
+            status=LearnerStatus.IN_PROGRESS,
+        )],
+        pipeline_learners=[PipelineLearner(
+            learner_id="pipeline", programme_name="Pharmacy L3",
+            programme_code="pharmacy-l3", workstream=Workstream.PHARMACY,
+            start_date=date(2026, 10, 1), expected_end_date=date(2027, 1, 1),
+        )],
+    )
+    result = build_forecast(request)
+    monthly = next(row for row in result.workstream_months if row.workstream == Workstream.PHARMACY)
+    current = next(row for row in result.current_workstream_snapshots if row.workstream == Workstream.PHARMACY)
+    programme = next(row for row in result.current_programme_snapshots if row.programme_code == "pharmacy-l3")
+    assert monthly.total_capacity == 0  # Monthly denominator is effective on 1 October.
+    assert current.learners == programme.learners == 2
+    assert current.capacity == programme.capacity == 50
+    assert current.remaining_places == 48
+    assert current.utilisation_percent == 4.0
+    assert result.current_total_snapshot is not None
+    assert result.current_total_snapshot.learners == 2
+    assert result.current_total_snapshot.tutors == 1
+
+
+def test_current_total_counts_cross_workstream_tutor_once() -> None:
+    result = build_forecast(ForecastRequest(
+        as_of_date=date(2026, 10, 12), months=1,
+        tutors=[Tutor(
+            tutor_id="T1", tutor_name="Mixed tutor", workstream=Workstream.PHARMACY,
+            capacity=50,
+            programme_allocations=[
+                TutorCapacityAllocation(
+                    programme_code="pharmacy-l3", programme_name="Pharmacy L3",
+                    workstream=Workstream.PHARMACY, capacity=30,
+                ),
+                TutorCapacityAllocation(
+                    programme_code="dental-general", programme_name="Dental",
+                    workstream=Workstream.DENTAL, capacity=20,
+                ),
+            ],
+        )], existing_learners=[], pipeline_learners=[],
+    ))
+    assert result.current_total_snapshot is not None
+    assert result.current_total_snapshot.tutors == 1
+    assert result.current_total_snapshot.capacity == 50
 
 
 def test_pipeline_is_allocated_only_within_its_workstream() -> None:

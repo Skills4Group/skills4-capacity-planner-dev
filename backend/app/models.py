@@ -174,6 +174,22 @@ class UnallocatedLearner(BaseModel):
     programme_code: str | None = None
 
 
+class CurrentCapacitySnapshot(BaseModel):
+    learners: int
+    capacity: int
+    tutors: int
+    remaining_places: int
+    utilisation_percent: float | None
+
+
+class CurrentWorkstreamSnapshot(CurrentCapacitySnapshot):
+    workstream: Workstream
+
+
+class CurrentProgrammeSnapshot(CurrentWorkstreamSnapshot):
+    programme_code: str
+
+
 class ForecastResponse(BaseModel):
     generated_at: date
     months: list[date]
@@ -181,6 +197,9 @@ class ForecastResponse(BaseModel):
     workstream_months: list[WorkstreamMonth]
     tutor_programme_months: list[TutorProgrammeMonth] = Field(default_factory=list)
     programme_months: list[ProgrammeMonth] = Field(default_factory=list)
+    current_total_snapshot: CurrentCapacitySnapshot | None = None
+    current_workstream_snapshots: list[CurrentWorkstreamSnapshot] = Field(default_factory=list)
+    current_programme_snapshots: list[CurrentProgrammeSnapshot] = Field(default_factory=list)
     unallocated_learners: list[UnallocatedLearner]
 
 

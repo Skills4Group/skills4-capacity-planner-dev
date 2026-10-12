@@ -10,18 +10,22 @@ import { defaultForecastMonth, localMonthKey, selectMonthOptions, selectRollingM
 import { type ForecastResponse, type TutorDiscoverySummary, type TutorMonth } from './types'
 import {
   isProgrammeFilter,
+  dashboardFilterOptions,
   reportingFilterLabels,
-  reportingFilterOptions,
   type ReportingFilter,
   workstreamForFilter,
 } from './reportingFilters'
 import { calculateWorkstreamUtilisation } from './workstreamUtilisation'
 import { distinctAvailableTutors, modelAggregateCapacity, modelTutorCapacity } from './forecastMetrics'
+import { currentUtilisationLabel, selectCurrentSnapshot } from './dashboardSnapshots'
 const demoForecast = createDemoForecast()
 const monthFormatter = new Intl.DateTimeFormat('en-GB', {
   month: 'short',
   year: 'numeric',
   timeZone: 'UTC',
+})
+const snapshotDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
 })
 
 const navigation = [
@@ -44,6 +48,10 @@ function LineIcon({ path }: { path: string }) {
 
 function formatMonth(value: string) {
   return monthFormatter.format(new Date(`${value}T00:00:00Z`))
+}
+
+function formatPlaces(value: number): string {
+  return value >= 0 ? `${value} free` : `${Math.abs(value)} short`
 }
 
 function statusFor(row: TutorMonth) {
@@ -153,6 +161,8 @@ function App() {
   }, [selectedAggregateRows, selectedTutorRows])
   const monthOptions = selectMonthOptions(forecast.months)
   const currentMonth = localMonthKey()
+  const currentSnapshot = selectCurrentSnapshot(forecast, selectedWorkstream)
+  const snapshotDate = snapshotDateFormatter.format(new Date(`${forecast.generated_at}T00:00:00Z`))
   const allWorkstreamUtilisation = calculateWorkstreamUtilisation(modeledStreamRows)
   const trendRows = selectRollingMonths(forecast.months, 18).map((month) => {
     const rows = isProgrammeFilter(selectedWorkstream)
@@ -252,11 +262,12 @@ function App() {
         )}
 
         <section className="summary-grid" aria-label="Capacity summary">
-          <article className="summary-card featured"><p>Remaining capacity</p><strong>{summary.remaining}</strong><span>{summary.remaining >= 0 ? 'learner places available' : 'learner places short'}</span><i>01</i></article>
-          <article className="summary-card"><p>Projected learners</p><strong>{summary.learners}</strong><span>at monthly peak</span><i>02</i></article>
-          <article className="summary-card"><p>Total capacity</p><strong>{summary.capacity}</strong><span>across {summary.tutors} tutors</span><i>03</i></article>
-          <article className="summary-card"><p>Utilisation</p><strong>{summary.utilisation === null ? 'No capacity' : `${summary.utilisation}%`}</strong><span>{summary.required ? `${summary.required} additional tutors required` : 'within available capacity'}</span><i>04</i></article>
+          <article className="summary-card featured"><p>Remaining capacity</p><strong>{summary.remaining}</strong><span>{summary.remaining >= 0 ? 'learner places available' : 'learner places short'}</span><small className="snapshot-note">Current: {currentSnapshot ? formatPlaces(currentSnapshot.remaining_places) : 'unavailable'}</small><i>01</i></article>
+          <article className="summary-card"><p>Projected learners</p><strong>{summary.learners}</strong><span>at selected month’s workstream peaks</span><small className="snapshot-note">Current: {currentSnapshot ? `${currentSnapshot.learners} learners` : 'unavailable'}</small><i>02</i></article>
+          <article className="summary-card"><p>Total capacity</p><strong>{summary.capacity}</strong><span>across {summary.tutors} tutors</span><small className="snapshot-note">Current: {currentSnapshot ? `${currentSnapshot.capacity} places · ${currentSnapshot.tutors} tutors` : 'unavailable'}</small><i>03</i></article>
+          <article className="summary-card"><p>Utilisation</p><strong>{summary.utilisation === null ? 'No capacity' : `${summary.utilisation}%`}</strong><span>{summary.required ? `${summary.required} additional tutors required` : 'within available capacity'}</span><small className="snapshot-note">Current: {currentUtilisationLabel(currentSnapshot)}</small><i>04</i></article>
         </section>
+        <p className="dashboard-metric-note">Current figures are as of {snapshotDate}. Monthly utilisation uses projected peak learners and capacity effective on the first day of {formatMonth(selectedMonth)}.</p>
 
         {scenarioOpen && (
           <section className="scenario-panel" aria-label="Capacity scenario controls">
@@ -266,13 +277,14 @@ function App() {
         )}
 
         <section className="workstream-strip" aria-label="Workstream filters">
-          <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{allWorkstreamUtilisation.remaining} places</strong><small className={`workstream-utilisation ${allWorkstreamUtilisation.tone}`}>{allWorkstreamUtilisation.label}</small></button>
-          {reportingFilterOptions.slice(1).map((filter) => {
+          <button className={selectedWorkstream === 'All' ? 'active' : ''} onClick={() => setSelectedWorkstream('All')}><span>All workstreams</span><strong>{allWorkstreamUtilisation.remaining} places</strong><small className={`workstream-utilisation ${allWorkstreamUtilisation.tone}`}>{allWorkstreamUtilisation.label} monthly</small><small className="workstream-current">Current: {forecast.current_total_snapshot ? `${forecast.current_total_snapshot.learners} learners · ${formatPlaces(forecast.current_total_snapshot.remaining_places)} · ${currentUtilisationLabel(forecast.current_total_snapshot)}` : 'unavailable'}</small></button>
+          {dashboardFilterOptions.slice(1).map((filter) => {
             const row = isProgrammeFilter(filter)
               ? modeledProgrammeRows.find((item) => item.programme_code === filter)
               : modeledStreamRows.find((item) => item.workstream === filter)
             const utilisation = calculateWorkstreamUtilisation(row ? [row] : [])
-            return <button key={filter} data-stream={workstreamForFilter(filter) ?? undefined} className={selectedWorkstream === filter ? 'active' : ''} onClick={() => setSelectedWorkstream(filter)}><span>{reportingFilterLabels[filter]}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label}</small></button>
+            const snapshot = selectCurrentSnapshot(forecast, filter)
+            return <button key={filter} data-stream={workstreamForFilter(filter) ?? undefined} className={selectedWorkstream === filter ? 'active' : ''} onClick={() => setSelectedWorkstream(filter)}><span>{reportingFilterLabels[filter]}</span><strong>{utilisation.remaining} places</strong><small className={`workstream-utilisation ${utilisation.tone}`}>{utilisation.label} monthly</small><small className="workstream-current">Current: {snapshot ? `${snapshot.learners} learners · ${formatPlaces(snapshot.remaining_places)} · ${currentUtilisationLabel(snapshot)}` : 'unavailable'}</small></button>
           })}
         </section>
 

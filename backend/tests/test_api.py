@@ -25,6 +25,14 @@ def test_demo_forecast_contract() -> None:
         "Business",
     }
     assert all(row["workstream"] != "Operations" for row in payload["tutor_months"])
+    assert payload["current_total_snapshot"]["learners"] >= 0
+    assert {row["workstream"] for row in payload["current_workstream_snapshots"]} == {
+        "Dental",
+        "Pharmacy",
+        "Housing",
+        "Science",
+        "Business",
+    }
 
 
 def test_demo_predictive_forecast_contract() -> None:

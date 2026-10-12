@@ -33,6 +33,10 @@ export const reportingFilterOptions: ReportingFilter[] = [
   'Business',
 ]
 
+export const dashboardFilterOptions = reportingFilterOptions.filter(
+  (filter) => filter !== 'pharmacy-general',
+)
+
 export const reportingScopeOptions = reportingFilterOptions.filter(
   (filter): filter is ReportingScope => filter !== 'All',
 )
