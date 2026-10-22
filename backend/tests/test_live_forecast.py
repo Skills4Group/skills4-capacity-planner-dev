@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from dataclasses import replace
 
 from app.adapters.attendance import AttendanceLearnerRecord, AttendanceTutorRecord
 from app.adapters.capacity import (
@@ -22,6 +23,34 @@ def learner(tutor_id: str, programme: str) -> AttendanceLearnerRecord:
         status_desc="In Progress",
         synced_at=datetime(2026, 8, 1),
     )
+
+
+def test_live_request_uses_practical_end_and_preserves_epa_status() -> None:
+    in_progress = replace(
+        learner("T1", "Pharmacy Services"),
+        practical_end_date=date(2026, 11, 27),
+    )
+    in_epa = replace(
+        learner("T1", "Pharmacy Services"),
+        learner_id="L-EPA", status_desc="In End Point Assessment",
+        practical_end_date=date(2026, 11, 27),
+    )
+    request = build_live_request(
+        as_of_date=date(2026, 10, 22), months=2,
+        attendance_learners=[in_progress, in_epa],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[], programme_mappings={}, pipeline_learners=[],
+    )
+    assert {row.expected_end_date for row in request.existing_learners} == {
+        date(2026, 11, 27)
+    }
+    assert {row.status.value for row in request.existing_learners} == {
+        "In Progress", "In End Point Assessment"
+    }
+    result = build_forecast(request)
+    assert result.current_total_snapshot is not None
+    assert result.current_total_snapshot.learners == 1
+    assert next(row for row in result.workstream_months if row.month == date(2026, 11, 1) and row.workstream == Workstream.PHARMACY).peak_projected_caseload == 1
 
 
 def test_programme_mapping_uses_config_before_fallback() -> None:

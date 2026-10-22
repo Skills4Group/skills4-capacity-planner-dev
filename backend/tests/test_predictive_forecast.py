@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from dataclasses import replace
 
 from app.adapters.attendance import AttendanceLearnerRecord
 from app.forecast import add_months
@@ -12,7 +13,7 @@ from app.models import (
     Tutor,
     Workstream,
 )
-from app.predictive_forecast import build_predictive_forecast
+from app.predictive_forecast import _duration_months, build_predictive_forecast
 
 
 def attendance_record(
@@ -32,6 +33,42 @@ def attendance_record(
         status_desc="In Progress",
         synced_at=datetime(2026, 8, 14),
     )
+
+
+def test_typical_duration_uses_practical_not_programme_end() -> None:
+    record = replace(
+        attendance_record(
+            "L1", "Pharmacy Services", date(2026, 1, 1), date(2028, 1, 1)
+        ),
+        practical_end_date=date(2027, 1, 1),
+    )
+    durations = _duration_months([record], {}, {})
+    assert durations[Workstream.PHARMACY] == 12
+
+
+def test_epa_is_not_current_predictive_capacity_demand() -> None:
+    existing = ExistingLearner(
+        learner_id="L1", tutor_id="T-PHA", programme_name="Pharmacy Services",
+        start_date=date(2026, 1, 1), expected_end_date=date(2027, 1, 1),
+        status=LearnerStatus.IN_END_POINT_ASSESSMENT,
+        workstream=Workstream.PHARMACY,
+    )
+    record = replace(
+        attendance_record(
+            "L1", "Pharmacy Services", date(2026, 1, 1), date(2027, 1, 1)
+        ),
+        status_desc="In End Point Assessment",
+    )
+    response = build_predictive_forecast(
+        as_of_date=date(2026, 8, 14), months=1,
+        attendance_learners=[record], forecast_request=build_request([existing]),
+        programme_mappings={},
+    )
+    pharmacy = next(
+        row for row in response.workstream_summaries
+        if row.workstream == Workstream.PHARMACY
+    )
+    assert pharmacy.current_active_learners == 0
 
 
 def build_request(existing: list[ExistingLearner] | None = None) -> ForecastRequest:

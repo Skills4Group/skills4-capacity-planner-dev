@@ -147,11 +147,11 @@ def _duration_months(
         if (
             workstream not in REPORTING_WORKSTREAMS
             or not record.start_date
-            or not record.expected_end_date
-            or record.expected_end_date < record.start_date
+            or not record.capacity_end_date
+            or record.capacity_end_date < record.start_date
         ):
             continue
-        days = (record.expected_end_date - record.start_date).days + 1
+        days = (record.capacity_end_date - record.start_date).days + 1
         durations[workstream].append(max(3, min(60, round(days / 30.4375))))
     return {
         workstream: (

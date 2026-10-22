@@ -37,6 +37,24 @@ def test_break_learners_do_not_use_capacity() -> None:
     assert result.tutor_months[0].remaining_capacity == 50
 
 
+def test_epa_learner_retains_status_but_does_not_use_tutor_capacity() -> None:
+    learner = ExistingLearner(
+        learner_id="EPA1", tutor_id="T1", programme_name="Pharmacy L3",
+        start_date=date(2026, 1, 1), expected_end_date=date(2027, 1, 1),
+        status=LearnerStatus.IN_END_POINT_ASSESSMENT,
+        workstream=Workstream.PHARMACY, programme_code="pharmacy-l3",
+    )
+    assert learner.status == LearnerStatus.IN_END_POINT_ASSESSMENT
+    result = build_forecast(ForecastRequest(
+        as_of_date=date(2026, 10, 22), months=1,
+        tutors=[Tutor(tutor_id="T1", tutor_name="Tutor", workstream=Workstream.PHARMACY)],
+        existing_learners=[learner], pipeline_learners=[],
+    ))
+    assert result.tutor_months[0].peak_caseload == 0
+    assert result.current_total_snapshot is not None
+    assert result.current_total_snapshot.learners == 0
+
+
 def test_current_snapshot_uses_as_of_day_and_excludes_pipeline_and_breaks() -> None:
     request = ForecastRequest(
         as_of_date=date(2026, 10, 12), months=1,

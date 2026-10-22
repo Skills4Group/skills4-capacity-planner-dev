@@ -9,18 +9,22 @@ from typing import Any
 # No learner names, email addresses, phone numbers, or learning-plan URLs leave
 # the Attendance database.
 LEARNER_PROGRESS_QUERY = """
-SELECT DISTINCT ON (apprentice_id)
-    apprentice_id AS learner_id,
-    tutor_id,
-    tutor_name,
-    programme_name,
-    start_date,
-    expected_end_date,
-    status_desc,
-    synced_at
-FROM public.learner_progress
-WHERE apprentice_id IS NOT NULL
-ORDER BY apprentice_id, start_date DESC NULLS LAST, synced_at DESC NULLS LAST
+SELECT DISTINCT ON (lp.apprentice_id)
+    lp.apprentice_id AS learner_id,
+    lp.tutor_id,
+    lp.tutor_name,
+    lp.programme_name,
+    lp.start_date,
+    lp.expected_end_date,
+    lp.status_desc,
+    lp.synced_at,
+    l.planned_end_date AS practical_end_date
+FROM public.learner_progress AS lp
+LEFT JOIN public.learners AS l
+    ON l.learner_ref = lp.learner_reference
+    AND l.deleted_at IS NULL
+WHERE lp.apprentice_id IS NOT NULL
+ORDER BY lp.apprentice_id, lp.start_date DESC NULLS LAST, lp.synced_at DESC NULLS LAST
 """
 
 
@@ -34,6 +38,18 @@ class AttendanceLearnerRecord:
     expected_end_date: date | None
     status_desc: str | None
     synced_at: datetime | None
+    practical_end_date: date | None = None
+
+    @property
+    def capacity_end_date(self) -> date | None:
+        """Use the practical end when valid; otherwise retain programme end."""
+        if (
+            self.practical_end_date is not None
+            and self.start_date is not None
+            and self.practical_end_date >= self.start_date
+        ):
+            return self.practical_end_date
+        return self.expected_end_date
 
 
 ACTIVE_TUTORS_QUERY = """

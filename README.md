@@ -17,6 +17,13 @@ and workstream cards also show a separate current snapshot as of the forecast's
 generation date: capacity-consuming Attendance learners represented in the forecast and active on that date,
 capacity available on that exact date, remaining places, and utilisation. Known
 pipeline and planned starters are excluded from this current-learner snapshot.
+Attendance learners use `public.learners.planned_end_date` as their capacity
+release date when it is on or after their start date; a missing or pre-start
+practical date falls back to `public.learner_progress.expected_end_date` (end of
+programme). The source status `In End Point Assessment` is preserved as EPA
+but does not consume tutor capacity. This applies to tutor caseloads, dashboard
+and utilisation, the rolling forecast, and predictive existing demand. Historical
+learner-start counts remain historical starts.
 The Pharmacy (general) dashboard card is hidden; its filter remains available on
 other screens, while Pharmacy (all), Pharmacy L2, and Pharmacy L3 remain visible.
 When a dashboard capacity scenario is open, each available tutor's scenario maximum
@@ -193,12 +200,12 @@ and expected end dates within the workstream. Individual durations are limited t
 3–60 months; the fallback is 18 months when no usable duration exists.
 
 Existing learners count in month `h` when their dates overlap that month and their
-status consumes capacity. On-break learners do not consume capacity.
+status consumes capacity. On-break and EPA learners do not consume capacity.
 
 ```text
 existing_active_h = count(distinct learners where
                           start_date <= month_end_h and
-                          expected_end_date >= month_start_h)
+                          capacity_end_date >= month_start_h)
 
 forecast_cohorts_(h,k) = sum(programme_starts_(j,k)
                              - future_dated_Attendance_starts_j) for each programme
@@ -415,6 +422,10 @@ scripts `002`, `003`, and `004` against `attendance`. They grant `SELECT` only o
 `public.learner_progress`, `public.tutors`, and `public.cohorts` and enforce
 read-only transactions for this identity in the Attendance database. Cohort access
 is used solely to show each tutor's current active-cohort count.
+The practical-end-date integration also requires script `005`, which grants
+column-level `SELECT` on `public.learners.learner_ref`, `planned_end_date`, and
+`deleted_at`. This grant was explicitly approved and applied to the dev Attendance
+database; it does not grant access to learner contact details or write access.
 
 ## Local development
 

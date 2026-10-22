@@ -124,8 +124,8 @@ def build_tutor_discovery_roster(
             or learner.status_desc not in consuming_statuses
             or (learner.start_date is not None and learner.start_date > as_of_date)
             or (
-                learner.expected_end_date is not None
-                and learner.expected_end_date < as_of_date
+                learner.capacity_end_date is not None
+                and learner.capacity_end_date < as_of_date
             )
         ):
             continue

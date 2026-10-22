@@ -44,7 +44,6 @@ class LearnerStatus(StrEnum):
 CAPACITY_CONSUMING_STATUSES = frozenset(
     {
         LearnerStatus.IN_PROGRESS,
-        LearnerStatus.IN_END_POINT_ASSESSMENT,
         LearnerStatus.WITHDRAWAL_REQUESTED,
         LearnerStatus.WITHDRAWAL_APPROVED,
         LearnerStatus.BREAK_REQUESTED,

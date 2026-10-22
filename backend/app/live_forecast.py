@@ -186,7 +186,7 @@ def build_live_request(
         if (
             not record.tutor_id
             or not record.start_date
-            or not record.expected_end_date
+            or not record.capacity_end_date
             or record.status_desc not in valid_statuses
         ):
             continue
@@ -207,7 +207,7 @@ def build_live_request(
                     tutor_id=record.tutor_id,
                     programme_name=record.programme_name or "Unspecified programme",
                     start_date=record.start_date,
-                    expected_end_date=record.expected_end_date,
+                    expected_end_date=record.capacity_end_date,
                     status=valid_statuses[record.status_desc],
                     workstream=learner_workstream,
                     programme_code=programme_code,
@@ -230,7 +230,7 @@ def build_live_request(
                 programme_name=record.programme_name or "Unspecified programme",
                 workstream=workstream,
                 start_date=record.start_date,
-                expected_end_date=record.expected_end_date,
+                expected_end_date=record.capacity_end_date,
                 status=valid_statuses[record.status_desc],
                 programme_code=resolve_programme_code(
                     record.programme_name,

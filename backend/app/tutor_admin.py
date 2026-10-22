@@ -51,8 +51,8 @@ def build_tutor_admin_records(
             learner.tutor_id
             and learner.status_desc in consuming_statuses
             and learner.start_date
-            and learner.expected_end_date
-            and learner.start_date <= as_of_date <= learner.expected_end_date
+            and learner.capacity_end_date
+            and learner.start_date <= as_of_date <= learner.capacity_end_date
         ):
             caseloads.setdefault(learner.tutor_id, set()).add(learner.learner_id)
 

@@ -54,6 +54,9 @@ def test_discovery_roster_includes_current_learner_assigned_tutor_missing_from_d
 
 def test_discovery_roster_ignores_non_consuming_and_expired_assignments() -> None:
     on_break = attendance_learner("L-BREAK", "T-BREAK", "Pharmacy", "On Break")
+    in_epa = attendance_learner(
+        "L-EPA", "T-EPA", "Pharmacy", "In End Point Assessment"
+    )
     expired = AttendanceLearnerRecord(
         learner_id="L-EXPIRED",
         tutor_id="T-EXPIRED",
@@ -64,10 +67,17 @@ def test_discovery_roster_ignores_non_consuming_and_expired_assignments() -> Non
         status_desc="In Progress",
         synced_at=datetime(2026, 8, 1),
     )
+    practical_expired = AttendanceLearnerRecord(
+        learner_id="L-PRACTICAL", tutor_id="T-PRACTICAL",
+        tutor_name="Practical Expired Tutor", programme_name="Pharmacy",
+        start_date=date(2025, 1, 1), expected_end_date=date(2027, 1, 1),
+        practical_end_date=date(2026, 7, 31), status_desc="In Progress",
+        synced_at=datetime(2026, 8, 1),
+    )
 
     roster = build_tutor_discovery_roster(
         tutors=[],
-        learners=[on_break, expired],
+        learners=[on_break, in_epa, expired, practical_expired],
         as_of_date=date(2026, 8, 11),
     )
 
@@ -112,6 +122,27 @@ def test_tutor_directory_includes_idle_and_unassigned_tutors() -> None:
     assert records[0].capacity == 50
     assert records[1].workstream is None
     assert records[1].workstream_source == "unassigned"
+
+
+def test_tutor_directory_excludes_epa_and_uses_practical_end() -> None:
+    in_progress = attendance_learner("L1", "T1", "Pharmacy Services")
+    practical_ended = AttendanceLearnerRecord(
+        learner_id="L2", tutor_id="T1", tutor_name="Tutor",
+        programme_name="Pharmacy Services", start_date=date(2026, 1, 1),
+        expected_end_date=date(2027, 1, 1), status_desc="In Progress",
+        synced_at=None, practical_end_date=date(2026, 7, 1),
+    )
+    records = build_tutor_admin_records(
+        as_of_date=date(2026, 8, 11),
+        attendance_learners=[
+            in_progress,
+            attendance_learner("L3", "T1", "Pharmacy Services", "In End Point Assessment"),
+            practical_ended,
+        ],
+        attendance_tutors=[AttendanceTutorRecord("T1", "Tutor One")],
+        tutor_settings=[], programme_mappings={},
+    )
+    assert records[0].current_caseload == 1
 
 
 def test_saved_capacity_overrides_default_and_break_does_not_use_space() -> None:
