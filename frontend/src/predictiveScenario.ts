@@ -123,12 +123,11 @@ export function applyPredictiveScenario(
     const activeStarterAdjustment = starterAdjustments.reduce(
       (total, adjustment, cohortIndex) => {
         if (index - cohortIndex >= durationMonths) return total
-        let survival = 1
-        for (let monthIndex = cohortIndex; monthIndex <= index; monthIndex += 1) {
-          const rate = ratesByMonth.get(ordered[monthIndex].month)
-          if (rate) survival *= 1 - (rate.bil_percent + rate.oof_percent) / 100
-        }
-        return total + adjustment * survival
+        const startRate = ratesByMonth.get(ordered[cohortIndex].month)
+        const startFraction = startRate
+          ? 1 - (startRate.bil_percent + startRate.oof_percent) / 100
+          : 1
+        return total + adjustment * startFraction
       },
       0,
     )

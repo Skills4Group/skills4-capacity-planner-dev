@@ -71,7 +71,7 @@ test('zero starters is an explicit override and expires after programme duration
   assert.deepEqual(result.map((item) => item.revisedActive), [30, 40, 60])
 })
 
-test('manual starter adjustments follow the saved monthly BIL and OOF rates', () => {
+test('manual starter adjustments use only their own start-month BIL and OOF rates', () => {
   const drafts: ScenarioDrafts = {
     [scenarioKey('Pharmacy', '2026-09-01')]: { starters: '20' },
   }
@@ -85,7 +85,7 @@ test('manual starter adjustments follow the saved monthly BIL and OOF rates', ()
       { month: '2026-10-01', bil_percent: 0, oof_percent: 10 },
     ],
   )
-  assert.deepEqual(result.map((item) => item.revisedActive), [49, 48])
+  assert.deepEqual(result.map((item) => item.revisedActive), [49, 49])
 })
 
 test('BiL, withdrawals and OOF reduce demand until offset by a BiL return', () => {

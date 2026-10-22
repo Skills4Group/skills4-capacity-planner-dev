@@ -216,30 +216,30 @@ forecast_cohorts_(h,k) = sum(programme_starts_(j,k)
 gross_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
 ```
 
-Future BIL and OOF are then estimated at 4% **each** of that month's active
-caseload by default (8% combined). An admin can save a different BIL and/or OOF
-percentage for a particular month; the saved rates apply to every reporting
-workstream and programme. They do not change today's observed learner count.
-The calculation follows each existing learner and predicted cohort only until its
-practical end date or planned duration, so a learner already removed by BIL/OOF
-is not subtracted again after that cohort naturally finishes. For each still-active
-cohort `c` and month `h`:
+Future BIL and OOF are estimated at 4% **each** of the forecast **starts** in
+their start month by default (8% combined). An admin can save a different BIL
+and/or OOF percentage for a particular month; the saved rates apply to every
+reporting workstream and programme. The deduction is applied **once** to each
+future cohort at its start, not repeatedly to the active caseload. Learners
+already active before the forecast window retain their observed status and are
+not reduced by a new assumption. Future-dated Attendance starts are included in
+the start-month deduction. For future cohort `c` starting in month `j`:
 
 ```text
-survival_(c,h-1) = product(1 - (BIL_rate_j + OOF_rate_j) / 100)
-                   over forecast months j since cohort c first enters the forecast,
-                   excluding h
-pre_movement_active_h = sum(cohort_size_c * survival_(c,h-1))
-estimated_BIL_h = round(pre_movement_active_h * BIL_rate_h / 100)
-estimated_OOF_h = round(pre_movement_active_h * OOF_rate_h / 100)
-predicted_active_h = round(pre_movement_active_h
-                           * (1 - (BIL_rate_h + OOF_rate_h) / 100))
+estimated_BIL_j = round(gross_starts_j * BIL_rate_j / 100)
+estimated_OOF_j = round(gross_starts_j * OOF_rate_j / 100)
+net_cohort_size_c = gross_cohort_size_c
+                    * (1 - (BIL_rate_j + OOF_rate_j) / 100)
+predicted_active_h = round(existing_pre_forecast_active_h
+                           + sum(net_cohort_size_c for cohorts still active in h))
 ```
 
 The same rule is applied independently for P50/P80/P90 and for programme and
 workstream reporting. Reported BIL/OOF counts are rounded for display; the
-unrounded cohort survival is carried forward. BIL returns are not assumed by
-default and may be modeled in the temporary scenario.
+unrounded net cohort size is carried forward until its practical end or planned
+duration. For example, 2,500 forecast starts at the default rates yield 100
+estimated BIL, 100 estimated OOF, and a 2,300-learner net cohort. BIL returns
+are not assumed by default and may be modeled in the temporary scenario.
 
 #### 7. Capacity gap and additional tutors
 
@@ -286,10 +286,13 @@ For an entered month:
 ```text
 net_learner_movement = Starters + BiL_Returns - BiL - WD - OOF
 starter_adjustment = Manual_Starters - Model_Starters
+net_starter_adjustment = starter_adjustment
+                         * (1 - (BIL_rate + OOF_rate) / 100)
 ```
 
-The starter adjustment remains active for the workstream's median programme
-duration. BiL, WD, and OOF reductions carry into subsequent months; a BiL return
+The start-month rate is applied once to the manual starter adjustment, which
+then remains active for the workstream's median programme duration. Additional
+manual BiL, WD, and OOF reductions carry into subsequent months; a BiL return
 offsets the accumulated BiL reduction. For forecast month `h`:
 
 ```text

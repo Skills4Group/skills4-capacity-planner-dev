@@ -327,7 +327,7 @@ def test_monthly_bil_and_oof_defaults_and_saved_override() -> None:
             learner_id=f"L{i}", programme_name="Pharmacy L2",
             workstream=Workstream.PHARMACY, start_date=date(2026, 11, 1),
             expected_end_date=date(2027, 11, 1),
-        ) for i in range(100)],
+        ) for i in range(2500)],
     )
     default = build_predictive_forecast(
         as_of_date=request.as_of_date, months=2, attendance_learners=[],
@@ -335,10 +335,15 @@ def test_monthly_bil_and_oof_defaults_and_saved_override() -> None:
     )
     first = next(row for row in default.workstream_months
                  if row.workstream == Workstream.PHARMACY and row.month == date(2026, 11, 1))
-    assert first.predicted_starts_p50 == 100
-    assert first.estimated_bil_p50 == 4
-    assert first.estimated_oof_p50 == 4
-    assert first.predicted_active_p50 == 92
+    assert first.predicted_starts_p50 == 2500
+    assert first.estimated_bil_p50 == 100
+    assert first.estimated_oof_p50 == 100
+    assert first.predicted_active_p50 == 2300
+    second = next(row for row in default.workstream_months
+                  if row.workstream == Workstream.PHARMACY and row.month == date(2026, 12, 1))
+    assert second.estimated_bil_p50 == 0
+    assert second.estimated_oof_p50 == 0
+    assert second.predicted_active_p50 == 2300
 
     override = build_predictive_forecast(
         as_of_date=request.as_of_date, months=2, attendance_learners=[],
@@ -350,8 +355,8 @@ def test_monthly_bil_and_oof_defaults_and_saved_override() -> None:
     overridden = next(row for row in override.workstream_months
                       if row.workstream == Workstream.PHARMACY and row.month == date(2026, 11, 1))
     assert overridden.estimated_bil_p50 == 0
-    assert overridden.estimated_oof_p50 == 2
-    assert overridden.predicted_active_p50 == 98
+    assert overridden.estimated_oof_p50 == 50
+    assert overridden.predicted_active_p50 == 2450
     assert override.movement_rates[0].bil_percent == 0
 
 
@@ -368,9 +373,28 @@ def test_bil_and_oof_do_not_outlive_an_existing_learner_end_date() -> None:
     )
     pharmacy = [row for row in response.workstream_months
                 if row.workstream == Workstream.PHARMACY]
-    assert pharmacy[0].predicted_active_p50 == 92
+    assert pharmacy[0].estimated_bil_p50 == 0
+    assert pharmacy[0].estimated_oof_p50 == 0
+    assert pharmacy[0].predicted_active_p50 == 100
     assert pharmacy[1].existing_active_learners == 0
     assert pharmacy[1].predicted_active_p50 == 0
+
+
+def test_future_dated_attendance_starts_are_reduced_once() -> None:
+    learners = [ExistingLearner(
+        learner_id=f"L{i}", tutor_id="T-PHA", programme_name="Pharmacy Services",
+        start_date=date(2026, 11, 1), expected_end_date=date(2026, 12, 31),
+        status=LearnerStatus.IN_PROGRESS, workstream=Workstream.PHARMACY,
+    ) for i in range(100)]
+    response = build_predictive_forecast(
+        as_of_date=date(2026, 10, 1), months=2,
+        attendance_learners=[], forecast_request=build_request(learners),
+        programme_mappings={},
+    )
+    pharmacy = [row for row in response.workstream_months
+                if row.workstream == Workstream.PHARMACY]
+    assert [row.predicted_active_p50 for row in pharmacy] == [92, 92]
+    assert [row.estimated_bil_p50 for row in pharmacy] == [4, 0]
 
 
 def test_future_dated_attendance_starter_is_not_counted_twice() -> None:

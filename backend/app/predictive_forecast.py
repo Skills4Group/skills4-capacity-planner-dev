@@ -174,30 +174,31 @@ def _confidence(months: int, starts: int) -> str:
 
 
 def _monthly_demand_after_movements(
-    components: list[tuple[int, int]],
+    components: list[tuple[int, int, bool]],
     month_index: int,
     forecast_months: list[date],
     rates: dict[date, MonthlyMovementRate],
 ) -> tuple[int, int, int]:
-    """Apply future BIL/OOF risk to each still-active cohort, not its ended peers."""
-    pre_movement = 0.0
-    for first_month_index, count in components:
-        survival = 1.0
-        for prior_index in range(first_month_index, month_index):
-            prior = rates.get(forecast_months[prior_index])
-            bil = prior.bil_percent if prior else DEFAULT_MOVEMENT_PERCENT
-            oof = prior.oof_percent if prior else DEFAULT_MOVEMENT_PERCENT
-            survival *= 1 - (bil + oof) / 100
-        pre_movement += count * survival
+    """Deduct BIL/OOF once at a future cohort's start; never reapply monthly."""
+    active = 0.0
+    starts_this_month = 0
+    for first_month_index, count, is_future_start in components:
+        if not is_future_start:
+            active += count
+            continue
+        start_rate = rates.get(forecast_months[first_month_index])
+        bil_rate = start_rate.bil_percent if start_rate else DEFAULT_MOVEMENT_PERCENT
+        oof_rate = start_rate.oof_percent if start_rate else DEFAULT_MOVEMENT_PERCENT
+        active += count * (1 - (bil_rate + oof_rate) / 100)
+        if first_month_index == month_index:
+            starts_this_month += count
     current = rates.get(forecast_months[month_index])
     bil_rate = current.bil_percent if current else DEFAULT_MOVEMENT_PERCENT
     oof_rate = current.oof_percent if current else DEFAULT_MOVEMENT_PERCENT
-    bil = pre_movement * bil_rate / 100
-    oof = pre_movement * oof_rate / 100
     return (
-        int(pre_movement - bil - oof + 0.5),
-        int(bil + 0.5),
-        int(oof + 0.5),
+        int(active + 0.5),
+        int(starts_this_month * bil_rate / 100 + 0.5),
+        int(starts_this_month * oof_rate / 100 + 0.5),
     )
 
 
@@ -478,6 +479,7 @@ def build_predictive_forecast(
                     (
                         max(0, _month_distance(forecast_months[0], month_start(learner.start_date))),
                         1,
+                        learner.start_date >= forecast_months[0],
                     )
                     for learner in {item.learner_id: item for item in existing_by_stream[workstream]}.values()
                     if learner.start_date <= month_end(month)
@@ -494,7 +496,7 @@ def build_predictive_forecast(
                         if index - cohort_index < programme.duration_months
                     )
                     if programme_cohort:
-                        components.append((cohort_index, programme_cohort))
+                        components.append((cohort_index, programme_cohort, True))
                     residual = max(
                         0,
                         predicted_starts[key][cohort_index]
@@ -514,7 +516,7 @@ def build_predictive_forecast(
                         )
                         residual_cohort = max(0, residual - unclassified_existing)
                         if residual_cohort:
-                            components.append((cohort_index, residual_cohort))
+                            components.append((cohort_index, residual_cohort, True))
                 active[key], estimated_bil[key], estimated_oof[key] = (
                     _monthly_demand_after_movements(
                         components, index, forecast_months, movement_rates
@@ -660,6 +662,7 @@ def build_predictive_forecast(
                     (
                         max(0, _month_distance(forecast_months[0], month_start(learner.start_date))),
                         1,
+                        learner.start_date >= forecast_months[0],
                     )
                     for learner in {item.learner_id: item for item in existing_by_programme[programme_code]}.values()
                     if learner.start_date <= month_end(month)
@@ -673,6 +676,7 @@ def build_predictive_forecast(
                             predicted_starts[key][cohort_index]
                             - programme_existing_start_counts[programme_code][forecast_months[cohort_index]],
                         ),
+                        True,
                     )
                     for cohort_index in range(index + 1)
                     if index - cohort_index < programme.duration_months
@@ -793,7 +797,7 @@ def build_predictive_forecast(
         "Predictions use each learner's latest Attendance record; historical status-transition dates are not available.",
         "The current partial month is excluded from training. Capacity changes at configured maternity return months and confirmed planned tutor dates; other current tutor settings are held constant.",
         "Known pipeline, future-dated Attendance starts and planned programme starts are minimums rather than additions to the statistical prediction.",
-        "Future BIL and OOF are planning estimates, each 4% of the monthly active caseload unless a saved monthly rate overrides it. They are applied only to future demand, not today's observed learners.",
+        "Future BIL and OOF are planning estimates, each 4% of that month's projected starts unless a saved monthly rate overrides it. Each future cohort is reduced once at its start; existing learners are not reduced again.",
     ]
     if missing_start:
         warnings.append(
@@ -821,7 +825,7 @@ def build_predictive_forecast(
         method_description=(
             "Robust seasonal forecast using up to 36 complete months of learner starts, "
             "a capped recent trend, scheduled learner end dates, typical programme duration, "
-            "monthly BIL/OOF planning rates, and P50/P80/P90 planning ranges."
+            "one-time BIL/OOF deductions from projected starts, and P50/P80/P90 planning ranges."
         ),
         data_warnings=warnings,
         workstream_months=rows,

@@ -70,7 +70,7 @@ export function MonthlyMovementPanel({ rates, onSaved }: Props) {
         <div>
           <p className="eyebrow">Shared planning assumptions</p>
           <h2 id="movement-rate-title">Monthly BIL and OOF rates</h2>
-          <p>Each defaults to 4% of the month's active caseload. Future BIL and OOF reduce projected learner demand and tutor requirement; today's observed learners are unchanged.</p>
+          <p>Each defaults to 4% of that month's projected starts. The deduction is applied once when a future cohort starts, then that smaller cohort carries forward. Today's existing learners are unchanged.</p>
         </div>
         <button className="programme-planning-toggle" type="button" aria-expanded={expanded} aria-controls="movement-rate-content" onClick={() => setExpanded((value) => !value)}>
           {expanded ? 'Collapse rates' : 'Edit monthly rates'}<span aria-hidden="true">{expanded ? '⌃' : '⌄'}</span>
