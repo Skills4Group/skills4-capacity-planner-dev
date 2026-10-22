@@ -26,6 +26,12 @@ function row(
     predicted_active_p50: active,
     predicted_active_p80: active,
     predicted_active_p90: active,
+    estimated_bil_p50: 0,
+    estimated_bil_p80: 0,
+    estimated_bil_p90: 0,
+    estimated_oof_p50: 0,
+    estimated_oof_p80: 0,
+    estimated_oof_p90: 0,
     effective_capacity: capacity,
     additional_tutors_p50: 0,
     additional_tutors_p80: 0,
@@ -63,6 +69,23 @@ test('zero starters is an explicit override and expires after programme duration
 
   assert.equal(result[0].startersOverridden, true)
   assert.deepEqual(result.map((item) => item.revisedActive), [30, 40, 60])
+})
+
+test('manual starter adjustments follow the saved monthly BIL and OOF rates', () => {
+  const drafts: ScenarioDrafts = {
+    [scenarioKey('Pharmacy', '2026-09-01')]: { starters: '20' },
+  }
+  const result = applyPredictiveScenario(
+    [row('2026-09-01', 40), row('2026-10-01', 40)],
+    18,
+    'p80',
+    drafts,
+    [
+      { month: '2026-09-01', bil_percent: 10, oof_percent: 0 },
+      { month: '2026-10-01', bil_percent: 0, oof_percent: 10 },
+    ],
+  )
+  assert.deepEqual(result.map((item) => item.revisedActive), [49, 48])
 })
 
 test('BiL, withdrawals and OOF reduce demand until offset by a BiL return', () => {

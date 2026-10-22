@@ -46,6 +46,8 @@ from .models import (
     ForecastRequest,
     ForecastResponse,
     PredictiveForecastResponse,
+    MonthlyMovementRate,
+    MonthlyMovementRateUpdate,
     PlannedCohortRecord,
     PlannedCohortUpdateRequest,
     ProgrammePlanningRecord,
@@ -62,6 +64,7 @@ from .models import (
     TutorUpdateResponse,
 )
 from .predictive_forecast import build_predictive_forecast
+from .predictive_movements import fetch_movement_rates, save_movement_rate
 from .programme_planning import (
     academic_year_for,
     fetch_programme_aliases,
@@ -440,6 +443,11 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             programme_aliases = fetch_programme_aliases(capacity)
             horizon_end = add_months(month_start(as_of_date), settings.forecast_months + 1) - timedelta(days=1)
             planned_tutors = fetch_confirmed_planned_tutors(capacity, as_of_date, horizon_end)
+            movement_rates = fetch_movement_rates(
+                capacity,
+                add_months(month_start(as_of_date), 1),
+                add_months(month_start(as_of_date), settings.forecast_months),
+            )
         request = build_live_request(
             as_of_date=as_of_date,
             months=settings.forecast_months,
@@ -463,12 +471,40 @@ def live_predictive_forecast() -> PredictiveForecastResponse:
             programmes=programmes,
             planned_cohorts=planned_cohorts,
             programme_aliases=programme_aliases,
+            movement_rates=movement_rates,
         )
     except Exception:
         logger.exception("Predictive forecast generation failed")
         raise HTTPException(
             status_code=503,
             detail="Predictive forecast data is temporarily unavailable",
+        ) from None
+
+
+@app.put(
+    "/api/v1/predictive-movement-rates/{month}",
+    response_model=MonthlyMovementRate,
+)
+def update_predictive_movement_rate(
+    month: date, update: MonthlyMovementRateUpdate, request: Request
+) -> MonthlyMovementRate:
+    user = require_capacity_admin(request)
+    if month.day != 1:
+        raise HTTPException(status_code=422, detail="Month must be the first day of a month")
+    actor = user.display_name or user.object_id or "unknown-admin"
+    try:
+        with capacity_connection(settings) as capacity:
+            return save_movement_rate(
+                capacity,
+                month=month,
+                bil_percent=update.bil_percent,
+                oof_percent=update.oof_percent,
+                updated_by=actor,
+            )
+    except Exception:
+        logger.exception("Predictive movement rate update failed")
+        raise HTTPException(
+            status_code=503, detail="Monthly BIL/OOF rates could not be saved"
         ) from None
 
 

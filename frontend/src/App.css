@@ -3279,3 +3279,9 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
   .settings-form-card form { grid-template-columns: 1fr; }
   .settings-primary-button { width: 100%; }
 }
+.movement-rate-card { margin-top: 22px; }
+.movement-rate-card .programme-planning-heading { gap: 20px; }
+.movement-rate-table { min-width: 620px; width: 100%; }
+.movement-rate-table input { width: 90px; max-width: 100%; padding: 8px; border: 1px solid #d4dbea; border-radius: 6px; }
+.movement-rate-table td:last-child { width: 130px; }
+.movement-rate-error { color: #ae2446; margin: 14px 20px; }

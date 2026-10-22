@@ -14,6 +14,7 @@ import {
   type PredictiveWorkstreamSummary,
 } from './types'
 import { ProgrammePlanningPanel } from './ProgrammePlanningPanel'
+import { MonthlyMovementPanel } from './MonthlyMovementPanel'
 import {
   isProgrammeFilter,
   pharmacyProgrammeFilters,
@@ -50,10 +51,10 @@ const scenarioFields: Array<{
   shortLabel: string
 }> = [
   { field: 'starters', label: 'Starters', shortLabel: 'Starters' },
-  { field: 'bil', label: 'Breaks in Learning', shortLabel: 'BiL' },
+  { field: 'bil', label: 'Additional Breaks in Learning', shortLabel: 'Extra BiL' },
   { field: 'bilReturns', label: 'Returns from Breaks in Learning', shortLabel: 'BiL returns' },
   { field: 'withdrawn', label: 'Withdrawn', shortLabel: 'WD' },
-  { field: 'outOfFunding', label: 'Out of Funding', shortLabel: 'OOF' },
+  { field: 'outOfFunding', label: 'Additional Out of Funding', shortLabel: 'Extra OOF' },
 ]
 
 function formatMonth(value: string) {
@@ -144,6 +145,7 @@ export function PredictiveForecastView({
         duration,
         confidence,
         scenarioDrafts,
+        forecast.movement_rates,
       )
     })
     const programmeRows = pharmacyProgrammeFilters.flatMap((programmeCode) => {
@@ -157,6 +159,7 @@ export function PredictiveForecastView({
         duration,
         confidence,
         scenarioDrafts,
+        forecast.movement_rates,
       )
     })
     return [...workstreamRows, ...programmeRows]
@@ -193,6 +196,8 @@ export function PredictiveForecastView({
       finishes: sourceRows.reduce((sum, row) => sum + row.scheduled_finishes, 0),
       knownStarts: sourceRows.reduce((sum, row) => sum + row.known_pipeline_starts, 0),
       baselineStarts: modeledRows.reduce((sum, row) => sum + row.baselineStarts, 0),
+      estimatedBil: sourceRows.reduce((sum, row) => sum + row[`estimated_bil_${confidence}`], 0),
+      estimatedOof: sourceRows.reduce((sum, row) => sum + row[`estimated_oof_${confidence}`], 0),
       scenarioStarts: modeledRows.reduce((sum, row) => sum + row.effectiveStarters, 0),
       baselineActive: modeledRows.reduce((sum, row) => sum + row.baselineActive, 0),
       active: modeledRows.reduce((sum, row) => sum + row.revisedActive, 0),
@@ -200,7 +205,7 @@ export function PredictiveForecastView({
       tutors: modeledRows.reduce((sum, row) => sum + row.additionalTutors, 0),
       hasAdjustment: modeledRows.some((row) => row.hasAdjustment),
     }
-  }), [forecast, months, scenarioRowsByKey, selectedStreams, selectedWorkstream])
+  }), [confidence, forecast, months, scenarioRowsByKey, selectedStreams, selectedWorkstream])
 
   function updateScenarioField(
     workstream: ReportingScope,
@@ -292,11 +297,12 @@ export function PredictiveForecastView({
       </section>
 
       {source === 'live' && <ProgrammePlanningPanel onSaved={loadForecast} />}
+      {source === 'live' && <MonthlyMovementPanel rates={forecast.movement_rates} onSaved={loadForecast} />}
 
       {scenarioOpen && (
         <section className="predictive-scenario-card" aria-labelledby="predictive-scenario-title">
           <div className="predictive-scenario-heading">
-            <div><p className="eyebrow">Manual planning layer</p><h2 id="predictive-scenario-title">Monthly learner movements</h2><p>Blank Starters use the {confidence.toUpperCase()} model; entering zero is an explicit override. Net movement = Starters + BiL returns − BiL − WD − OOF.</p></div>
+            <div><p className="eyebrow">Manual planning layer</p><h2 id="predictive-scenario-title">Monthly learner movements</h2><p>Blank Starters use the {confidence.toUpperCase()} model; entering zero is an explicit override. Extra BiL and OOF counts are in addition to the shared monthly rates. Net scenario movement = Starters + BiL returns − extra BiL − WD − extra OOF.</p></div>
             <div className="predictive-scenario-actions">
               <label><span>Editing workstream / programme</span><select value={scenarioWorkstream} onChange={(event) => setScenarioWorkstream(event.target.value as ReportingScope)}>{reportingScopeOptions.map((scope) => <option key={scope} value={scope}>{reportingFilterLabels[scope]}</option>)}</select></label>
               <button onClick={() => resetScenarioWorkstream(scenarioWorkstream)} disabled={!Object.entries(scenarioDrafts).some(([key, draft]) => key.startsWith(`${scenarioWorkstream}:`) && draftHasValues(draft))}>Reset {reportingFilterLabels[scenarioWorkstream]}</button>
@@ -342,7 +348,7 @@ export function PredictiveForecastView({
 
       <section className="resource-table-card predictive-table-card">
         <div className="section-heading"><div><p className="eyebrow">Numerical forecast</p><h2>Monthly demand and staffing requirement</h2></div></div>
-        <div className="resource-table-wrap"><table className="resource-table predictive-table"><thead><tr><th>Month</th><th>Existing</th><th title="Existing learners whose planned end date falls within this month">Learners finishing</th><th>Known pipeline</th><th>Model starts</th><th>Scenario starts</th><th>Baseline active</th><th>Revised active</th><th>Capacity</th><th>Variance</th><th>Additional tutors</th></tr></thead><tbody>{monthly.map((row) => <tr key={row.month} className={row.hasAdjustment ? 'scenario-adjusted-row' : ''}><td><strong>{formatMonth(row.month)}</strong></td><td>{row.existing}</td><td>{row.finishes}</td><td>{row.knownStarts}</td><td>{row.baselineStarts}</td><td><strong>{row.scenarioStarts}</strong></td><td>{row.baselineActive}</td><td><strong>{row.active}</strong></td><td>{row.capacity}</td><td className={row.active - row.baselineActive < 0 ? 'negative' : row.active - row.baselineActive > 0 ? 'positive' : ''}>{signed(row.active - row.baselineActive)}</td><td><span className={`resource-status ${row.tutors > 0 ? 'gap' : 'covered'}`}>{row.tutors > 0 ? `${row.tutors} required` : 'Covered'}</span></td></tr>)}</tbody></table></div>
+        <div className="resource-table-wrap"><table className="resource-table predictive-table"><thead><tr><th>Month</th><th>Existing</th><th title="Existing learners whose practical end date falls within this month">Learners finishing</th><th>Known pipeline</th><th>Model starts</th><th>Estimated BiL</th><th>Estimated OOF</th><th>Scenario starts</th><th>Model active after BiL/OOF</th><th>Revised active</th><th>Capacity</th><th>Variance</th><th>Additional tutors</th></tr></thead><tbody>{monthly.map((row) => <tr key={row.month} className={row.hasAdjustment ? 'scenario-adjusted-row' : ''}><td><strong>{formatMonth(row.month)}</strong></td><td>{row.existing}</td><td>{row.finishes}</td><td>{row.knownStarts}</td><td>{row.baselineStarts}</td><td>{row.estimatedBil}</td><td>{row.estimatedOof}</td><td><strong>{row.scenarioStarts}</strong></td><td>{row.baselineActive}</td><td><strong>{row.active}</strong></td><td>{row.capacity}</td><td className={row.active - row.baselineActive < 0 ? 'negative' : row.active - row.baselineActive > 0 ? 'positive' : ''}>{signed(row.active - row.baselineActive)}</td><td><span className={`resource-status ${row.tutors > 0 ? 'gap' : 'covered'}`}>{row.tutors > 0 ? `${row.tutors} required` : 'Covered'}</span></td></tr>)}</tbody></table></div>
       </section>
 
       <details className="predictive-warnings"><summary>Data quality notes ({forecast.data_warnings.length})</summary><ul>{forecast.data_warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>

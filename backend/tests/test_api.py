@@ -50,6 +50,14 @@ def test_demo_predictive_forecast_contract() -> None:
     )
 
 
+def test_monthly_movement_rates_require_admin_and_valid_percentages() -> None:
+    path = "/api/v1/predictive-movement-rates/2026-11-01"
+    response = client.put(path, json={"bil_percent": 4, "oof_percent": 4})
+    assert response.status_code == 503
+    response = client.put(path, json={"bil_percent": 60, "oof_percent": 50})
+    assert response.status_code == 422
+
+
 def test_tutor_write_is_disabled_without_platform_authentication() -> None:
     response = client.put(
         "/api/v1/tutors/T1/capacity",

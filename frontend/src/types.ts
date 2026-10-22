@@ -103,6 +103,12 @@ export interface PredictiveWorkstreamMonth {
   predicted_active_p50: number
   predicted_active_p80: number
   predicted_active_p90: number
+  estimated_bil_p50: number
+  estimated_bil_p80: number
+  estimated_bil_p90: number
+  estimated_oof_p50: number
+  estimated_oof_p80: number
+  estimated_oof_p90: number
   effective_capacity: number
   additional_tutors_p50: number
   additional_tutors_p80: number
@@ -149,6 +155,13 @@ export interface PredictiveForecastResponse {
   workstream_summaries: PredictiveWorkstreamSummary[]
   programme_months: PredictiveProgrammeMonth[]
   programme_summaries: PredictiveProgrammeSummary[]
+  movement_rates: MonthlyMovementRate[]
+}
+
+export interface MonthlyMovementRate {
+  month: string
+  bil_percent: number
+  oof_percent: number
 }
 
 export interface TutorAdminRecord {

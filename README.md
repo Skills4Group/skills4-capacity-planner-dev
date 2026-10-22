@@ -213,8 +213,33 @@ forecast_cohorts_(h,k) = sum(programme_starts_(j,k)
                          + residual workstream starts, less unclassified
                            future-dated Attendance starts, while (h - j) < D
 
-predicted_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
+gross_active_(h,k) = existing_active_h + forecast_cohorts_(h,k)
 ```
+
+Future BIL and OOF are then estimated at 4% **each** of that month's active
+caseload by default (8% combined). An admin can save a different BIL and/or OOF
+percentage for a particular month; the saved rates apply to every reporting
+workstream and programme. They do not change today's observed learner count.
+The calculation follows each existing learner and predicted cohort only until its
+practical end date or planned duration, so a learner already removed by BIL/OOF
+is not subtracted again after that cohort naturally finishes. For each still-active
+cohort `c` and month `h`:
+
+```text
+survival_(c,h-1) = product(1 - (BIL_rate_j + OOF_rate_j) / 100)
+                   over forecast months j since cohort c first enters the forecast,
+                   excluding h
+pre_movement_active_h = sum(cohort_size_c * survival_(c,h-1))
+estimated_BIL_h = round(pre_movement_active_h * BIL_rate_h / 100)
+estimated_OOF_h = round(pre_movement_active_h * OOF_rate_h / 100)
+predicted_active_h = round(pre_movement_active_h
+                           * (1 - (BIL_rate_h + OOF_rate_h) / 100))
+```
+
+The same rule is applied independently for P50/P80/P90 and for programme and
+workstream reporting. Reported BIL/OOF counts are rounded for display; the
+unrounded cohort survival is carried forward. BIL returns are not assumed by
+default and may be modeled in the temporary scenario.
 
 #### 7. Capacity gap and additional tutors
 
@@ -254,6 +279,7 @@ The Predictive Forecasting tab can apply browser-local monthly movements for eac
 reporting workstream. Users can enter Starters, Breaks in Learning (`BiL`), returns
 from BiL, Withdrawn (`WD`), and Out of Funding (`OOF`). Blank Starters retain the
 selected P50/P80/P90 prediction; entering `0` explicitly overrides it with no starts.
+Scenario BIL and OOF counts are **additional** to the shared monthly rates.
 
 For an entered month:
 
@@ -290,8 +316,11 @@ forecast window. Scenario values are held only in the current React session and 
 never written to Attendance or the Capacity database.
 
 The endpoint is `GET /api/v1/predictive-forecast`. It reads Attendance and current
-Capacity configuration but does not write to either database and requires no schema
-migration.
+Capacity configuration but does not write to either database. Monthly rates are
+stored in `capacity.predictive_movement_rate` after applying Capacity migration
+`backend/migrations/011_add_predictive_movement_rates.sql`. Admin-only
+`PUT /api/v1/predictive-movement-rates/{month}` saves shared rates; Attendance is
+never written.
 
 ## Stack
 

@@ -1,5 +1,6 @@
 import type {
   PredictiveConfidence,
+  MonthlyMovementRate,
   PredictiveWorkstreamMonth,
   Workstream,
 } from './types.ts'
@@ -100,8 +101,10 @@ export function applyPredictiveScenario(
   durationMonths: number,
   confidence: PredictiveConfidence,
   drafts: ScenarioDrafts,
+  movementRates: MonthlyMovementRate[] = [],
 ): PredictiveScenarioRow[] {
   const ordered = [...rows].sort((left, right) => left.month.localeCompare(right.month))
+  const ratesByMonth = new Map(movementRates.map((rate) => [rate.month, rate]))
   const starterAdjustments: number[] = []
   let cumulativeNonStarterMovement = 0
   let scenarioBreakBalance = 0
@@ -118,9 +121,15 @@ export function applyPredictiveScenario(
     starterAdjustments.push(starterAdjustment)
 
     const activeStarterAdjustment = starterAdjustments.reduce(
-      (total, adjustment, cohortIndex) => (
-        index - cohortIndex < durationMonths ? total + adjustment : total
-      ),
+      (total, adjustment, cohortIndex) => {
+        if (index - cohortIndex >= durationMonths) return total
+        let survival = 1
+        for (let monthIndex = cohortIndex; monthIndex <= index; monthIndex += 1) {
+          const rate = ratesByMonth.get(ordered[monthIndex].month)
+          if (rate) survival *= 1 - (rate.bil_percent + rate.oof_percent) / 100
+        }
+        return total + adjustment * survival
+      },
       0,
     )
     cumulativeNonStarterMovement += (
@@ -130,7 +139,7 @@ export function applyPredictiveScenario(
 
     const baselineActive = predictedActiveAtConfidence(row, confidence)
     const rawRevisedActive = (
-      baselineActive + activeStarterAdjustment + cumulativeNonStarterMovement
+      baselineActive + Math.round(activeStarterAdjustment) + cumulativeNonStarterMovement
     )
     const revisedActive = Math.max(0, rawRevisedActive)
     const additionalTutors = Math.ceil(

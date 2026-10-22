@@ -24,6 +24,7 @@ from .models import (
     PredictiveProgrammeSummary,
     PredictiveWorkstreamMonth,
     PredictiveWorkstreamSummary,
+    MonthlyMovementRate,
     PlannedCohortRecord,
     ProgrammePlanningRecord,
     REPORTING_WORKSTREAMS,
@@ -35,6 +36,7 @@ from .programme_classification import programme_display_name, resolve_programme_
 NEW_TUTOR_CAPACITY = 50
 MAX_TRAINING_MONTHS = 36
 DEFAULT_DURATION_MONTHS = 18
+DEFAULT_MOVEMENT_PERCENT = 4.0
 
 
 def _month_distance(start: date, end: date) -> int:
@@ -171,6 +173,34 @@ def _confidence(months: int, starts: int) -> str:
     return "Low"
 
 
+def _monthly_demand_after_movements(
+    components: list[tuple[int, int]],
+    month_index: int,
+    forecast_months: list[date],
+    rates: dict[date, MonthlyMovementRate],
+) -> tuple[int, int, int]:
+    """Apply future BIL/OOF risk to each still-active cohort, not its ended peers."""
+    pre_movement = 0.0
+    for first_month_index, count in components:
+        survival = 1.0
+        for prior_index in range(first_month_index, month_index):
+            prior = rates.get(forecast_months[prior_index])
+            bil = prior.bil_percent if prior else DEFAULT_MOVEMENT_PERCENT
+            oof = prior.oof_percent if prior else DEFAULT_MOVEMENT_PERCENT
+            survival *= 1 - (bil + oof) / 100
+        pre_movement += count * survival
+    current = rates.get(forecast_months[month_index])
+    bil_rate = current.bil_percent if current else DEFAULT_MOVEMENT_PERCENT
+    oof_rate = current.oof_percent if current else DEFAULT_MOVEMENT_PERCENT
+    bil = pre_movement * bil_rate / 100
+    oof = pre_movement * oof_rate / 100
+    return (
+        int(pre_movement - bil - oof + 0.5),
+        int(bil + 0.5),
+        int(oof + 0.5),
+    )
+
+
 def build_predictive_forecast(
     *,
     as_of_date: date,
@@ -181,9 +211,11 @@ def build_predictive_forecast(
     programmes: list[ProgrammePlanningRecord] | None = None,
     planned_cohorts: list[PlannedCohortRecord] | None = None,
     programme_aliases: dict[str, str] | None = None,
+    movement_rates: dict[date, MonthlyMovementRate] | None = None,
 ) -> PredictiveForecastResponse:
     programmes = [programme for programme in (programmes or []) if programme.active]
     planned_cohorts = planned_cohorts or []
+    movement_rates = movement_rates or {}
     forecast_months = _month_sequence(add_months(month_start(as_of_date), 1), months)
     training_end = add_months(month_start(as_of_date), -1)
     training_start = add_months(training_end, -(MAX_TRAINING_MONTHS - 1))
@@ -439,8 +471,18 @@ def build_predictive_forecast(
             )
 
             active = {}
+            estimated_bil = {}
+            estimated_oof = {}
             for key in ("p50", "p80", "p90"):
-                cohort_total = 0
+                components = [
+                    (
+                        max(0, _month_distance(forecast_months[0], month_start(learner.start_date))),
+                        1,
+                    )
+                    for learner in {item.learner_id: item for item in existing_by_stream[workstream]}.values()
+                    if learner.start_date <= month_end(month)
+                    and learner.expected_end_date >= month
+                ]
                 for cohort_index in range(index + 1):
                     programme_cohort = sum(
                         max(
@@ -451,6 +493,8 @@ def build_predictive_forecast(
                         for programme in stream_programmes
                         if index - cohort_index < programme.duration_months
                     )
+                    if programme_cohort:
+                        components.append((cohort_index, programme_cohort))
                     residual = max(
                         0,
                         predicted_starts[key][cohort_index]
@@ -459,7 +503,6 @@ def build_predictive_forecast(
                             for programme in stream_programmes
                         ),
                     )
-                    cohort_total += programme_cohort
                     if index - cohort_index < predicted_durations[cohort_index]:
                         unclassified_existing = max(
                             0,
@@ -469,8 +512,14 @@ def build_predictive_forecast(
                                 for programme in stream_programmes
                             ),
                         )
-                        cohort_total += max(0, residual - unclassified_existing)
-                active[key] = existing_active + cohort_total
+                        residual_cohort = max(0, residual - unclassified_existing)
+                        if residual_cohort:
+                            components.append((cohort_index, residual_cohort))
+                active[key], estimated_bil[key], estimated_oof[key] = (
+                    _monthly_demand_after_movements(
+                        components, index, forecast_months, movement_rates
+                    )
+                )
 
             capacity = sum(
                 tutor_stream_capacity_on(tutor, workstream, month)
@@ -489,6 +538,12 @@ def build_predictive_forecast(
                     predicted_active_p50=active["p50"],
                     predicted_active_p80=active["p80"],
                     predicted_active_p90=active["p90"],
+                    estimated_bil_p50=estimated_bil["p50"],
+                    estimated_bil_p80=estimated_bil["p80"],
+                    estimated_bil_p90=estimated_bil["p90"],
+                    estimated_oof_p50=estimated_oof["p50"],
+                    estimated_oof_p80=estimated_oof["p80"],
+                    estimated_oof_p90=estimated_oof["p90"],
                     effective_capacity=capacity,
                     additional_tutors_p50=ceil(
                         max(0, active["p50"] - capacity) / NEW_TUTOR_CAPACITY
@@ -598,17 +653,35 @@ def build_predictive_forecast(
                 }
             )
             active = {}
+            estimated_bil = {}
+            estimated_oof = {}
             for key in ("p50", "p80", "p90"):
-                cohort_total = sum(
-                    max(
-                        0,
-                        predicted_starts[key][cohort_index]
-                        - programme_existing_start_counts[programme_code][forecast_months[cohort_index]],
+                components = [
+                    (
+                        max(0, _month_distance(forecast_months[0], month_start(learner.start_date))),
+                        1,
+                    )
+                    for learner in {item.learner_id: item for item in existing_by_programme[programme_code]}.values()
+                    if learner.start_date <= month_end(month)
+                    and learner.expected_end_date >= month
+                ]
+                components.extend(
+                    (
+                        cohort_index,
+                        max(
+                            0,
+                            predicted_starts[key][cohort_index]
+                            - programme_existing_start_counts[programme_code][forecast_months[cohort_index]],
+                        ),
                     )
                     for cohort_index in range(index + 1)
                     if index - cohort_index < programme.duration_months
                 )
-                active[key] = existing_active + cohort_total
+                active[key], estimated_bil[key], estimated_oof[key] = (
+                    _monthly_demand_after_movements(
+                        components, index, forecast_months, movement_rates
+                    )
+                )
 
             capacity = sum(
                 tutor_programme_capacity_on(
@@ -634,6 +707,12 @@ def build_predictive_forecast(
                     predicted_active_p50=active["p50"],
                     predicted_active_p80=active["p80"],
                     predicted_active_p90=active["p90"],
+                    estimated_bil_p50=estimated_bil["p50"],
+                    estimated_bil_p80=estimated_bil["p80"],
+                    estimated_bil_p90=estimated_bil["p90"],
+                    estimated_oof_p50=estimated_oof["p50"],
+                    estimated_oof_p80=estimated_oof["p80"],
+                    estimated_oof_p90=estimated_oof["p90"],
                     effective_capacity=capacity,
                     additional_tutors_p50=ceil(
                         max(0, active["p50"] - capacity) / NEW_TUTOR_CAPACITY
@@ -714,6 +793,7 @@ def build_predictive_forecast(
         "Predictions use each learner's latest Attendance record; historical status-transition dates are not available.",
         "The current partial month is excluded from training. Capacity changes at configured maternity return months and confirmed planned tutor dates; other current tutor settings are held constant.",
         "Known pipeline, future-dated Attendance starts and planned programme starts are minimums rather than additions to the statistical prediction.",
+        "Future BIL and OOF are planning estimates, each 4% of the monthly active caseload unless a saved monthly rate overrides it. They are applied only to future demand, not today's observed learners.",
     ]
     if missing_start:
         warnings.append(
@@ -741,11 +821,16 @@ def build_predictive_forecast(
         method_description=(
             "Robust seasonal forecast using up to 36 complete months of learner starts, "
             "a capped recent trend, scheduled learner end dates, typical programme duration, "
-            "and P50/P80/P90 planning ranges."
+            "monthly BIL/OOF planning rates, and P50/P80/P90 planning ranges."
         ),
         data_warnings=warnings,
         workstream_months=rows,
         workstream_summaries=summaries,
         programme_months=programme_rows,
         programme_summaries=programme_summaries,
+        movement_rates=[
+            movement_rates.get(month)
+            or MonthlyMovementRate(month=month)
+            for month in forecast_months
+        ],
     )

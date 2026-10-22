@@ -214,6 +214,12 @@ class PredictiveWorkstreamMonth(BaseModel):
     predicted_active_p50: int
     predicted_active_p80: int
     predicted_active_p90: int
+    estimated_bil_p50: int = Field(default=0, ge=0)
+    estimated_bil_p80: int = Field(default=0, ge=0)
+    estimated_bil_p90: int = Field(default=0, ge=0)
+    estimated_oof_p50: int = Field(default=0, ge=0)
+    estimated_oof_p80: int = Field(default=0, ge=0)
+    estimated_oof_p90: int = Field(default=0, ge=0)
     effective_capacity: int
     additional_tutors_p50: int
     additional_tutors_p80: int
@@ -260,6 +266,30 @@ class PredictiveForecastResponse(BaseModel):
     workstream_summaries: list[PredictiveWorkstreamSummary]
     programme_months: list[PredictiveProgrammeMonth] = Field(default_factory=list)
     programme_summaries: list[PredictiveProgrammeSummary] = Field(default_factory=list)
+    movement_rates: list["MonthlyMovementRate"] = Field(default_factory=list)
+
+
+class MonthlyMovementRate(BaseModel):
+    month: date
+    bil_percent: float = Field(default=4.0, ge=0, le=100)
+    oof_percent: float = Field(default=4.0, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_combined_rate(self) -> "MonthlyMovementRate":
+        if self.bil_percent + self.oof_percent > 100:
+            raise ValueError("combined BIL and OOF percentages must not exceed 100")
+        return self
+
+
+class MonthlyMovementRateUpdate(BaseModel):
+    bil_percent: float = Field(ge=0, le=100)
+    oof_percent: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_combined_rate(self) -> "MonthlyMovementRateUpdate":
+        if self.bil_percent + self.oof_percent > 100:
+            raise ValueError("combined BIL and OOF percentages must not exceed 100")
+        return self
 
 
 class SessionResponse(BaseModel):
