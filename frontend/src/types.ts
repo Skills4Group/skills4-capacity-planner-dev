@@ -230,6 +230,25 @@ export interface AppUserRecord {
   last_seen_at: string
 }
 
+export interface PrivateModelAccessResponse {
+  can_view: boolean
+  is_owner: boolean
+}
+
+export interface PrivateModelGrantRecord {
+  object_id: string
+  display_name: string
+  email: string | null
+  granted_at: string
+  granted_by: string
+}
+
+export interface PrivateModelDirectoryResponse {
+  owner_object_id: string
+  registered_users: AppUserRecord[]
+  grants: PrivateModelGrantRecord[]
+}
+
 export interface AdminUserRecord {
   object_id: string
   display_name: string

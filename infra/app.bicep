@@ -15,6 +15,7 @@ param attendanceDatabaseName string = 'attendance'
 param databaseUser string
 param authEnabled bool = false
 param adminObjectIds string = ''
+param privateModelOwnerObjectId string = ''
 
 resource capacityApp 'Microsoft.App/containerApps@2026-01-01' = {
   name: appName
@@ -110,6 +111,10 @@ resource capacityApp 'Microsoft.App/containerApps@2026-01-01' = {
             {
               name: 'CAPACITY_ADMIN_OBJECT_IDS'
               value: adminObjectIds
+            }
+            {
+              name: 'CAPACITY_PRIVATE_MODEL_OWNER_OBJECT_ID'
+              value: privateModelOwnerObjectId
             }
           ]
           probes: [

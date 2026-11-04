@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     forecast_history_months: int = 3
     auth_enabled: bool = False
     admin_object_ids: str = ""
+    private_model_owner_object_id: str = ""
 
     @property
     def admin_ids(self) -> frozenset[str]:

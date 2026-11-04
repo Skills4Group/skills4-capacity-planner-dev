@@ -3,11 +3,12 @@ import './App.css'
 import { createDemoForecast } from './demoForecast'
 import { ForecastView } from './ForecastView'
 import { PredictiveForecastView } from './PredictiveForecastView'
+import { PrivateModelView } from './PrivateModelView'
 import { SettingsView } from './SettingsView'
 import { UtilisationView } from './UtilisationView'
 import { TutorsView } from './TutorsView'
 import { defaultForecastMonth, localMonthKey, selectMonthOptions, selectRollingMonths } from './rollingMonths'
-import { type ForecastResponse, type TutorDiscoverySummary, type TutorMonth } from './types'
+import { type ForecastResponse, type PrivateModelAccessResponse, type TutorDiscoverySummary, type TutorMonth } from './types'
 import {
   isProgrammeFilter,
   dashboardFilterOptions,
@@ -32,6 +33,7 @@ const navigation = [
   { label: 'Dashboard', path: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z' },
   { label: 'Forecast', path: 'M3 18 9 12l4 4 8-10M16 6h5v5' },
   { label: 'Predictive Forecasting', path: 'M4 19V9m5 10V5m5 14v-7m5 7V3M3 21h18' },
+  { label: 'Private Model', path: 'M5 11V7a7 7 0 0 1 14 0v4M4 11h16v10H4zM12 15v2' },
   { label: 'Utilisation', path: 'M3 12h4l2-6 4 12 3-9 2 3h3' },
   { label: 'Learners', path: 'm3 9 9-5 9 5-9 5zM7 12v4c3 2 7 2 10 0v-4' },
   { label: 'Tutors', path: 'M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 20v-2a4 4 0 0 0-3-3.87M16 2.13a4 4 0 0 1 0 7.75' },
@@ -61,7 +63,8 @@ function statusFor(row: TutorMonth) {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Utilisation' | 'Tutors' | 'Settings'>('Dashboard')
+  const [activeView, setActiveView] = useState<'Dashboard' | 'Forecast' | 'Predictive Forecasting' | 'Private Model' | 'Utilisation' | 'Tutors' | 'Settings'>('Dashboard')
+  const [privateModelAccess, setPrivateModelAccess] = useState<PrivateModelAccessResponse | null>(null)
   const [forecast, setForecast] = useState<ForecastResponse>(demoForecast)
   const [dataMode, setDataMode] = useState<'live' | 'demo'>('demo')
   const [selectedMonth, setSelectedMonth] = useState(defaultForecastMonth(demoForecast.months))
@@ -101,8 +104,31 @@ function App() {
   }, [refreshForecast])
 
   useEffect(() => {
-    void fetch('/api/v1/session', { cache: 'no-store' }).catch(() => undefined)
+    let active = true
+    async function refreshPrivateAccess() {
+      try {
+        await fetch('/api/v1/session', { cache: 'no-store' })
+        const response = await fetch('/api/v1/private-model/access', { cache: 'no-store' })
+        if (!response.ok) throw new Error('Private access unavailable')
+        const access = await response.json() as PrivateModelAccessResponse
+        if (active) setPrivateModelAccess(access)
+      } catch {
+        if (active) setPrivateModelAccess(null)
+      }
+    }
+    void refreshPrivateAccess()
+    window.addEventListener('focus', refreshPrivateAccess)
+    const timer = window.setInterval(() => void refreshPrivateAccess(), 5 * 60 * 1000)
+    return () => {
+      active = false
+      window.removeEventListener('focus', refreshPrivateAccess)
+      window.clearInterval(timer)
+    }
   }, [])
+
+  useEffect(() => {
+    if (activeView === 'Private Model' && !privateModelAccess?.can_view) setActiveView('Dashboard')
+  }, [activeView, privateModelAccess])
 
   useEffect(() => {
     void refreshTutorDiscovery().catch(() => undefined)
@@ -188,12 +214,12 @@ function App() {
           <strong className="brand-product">Capacity Forecaster</strong>
         </div>
         <nav aria-label="Primary navigation">
-          {navigation.map((item) => (
+          {navigation.filter((item) => item.label !== 'Private Model' || privateModelAccess?.can_view).map((item) => (
             <button
               key={item.label}
               className={`nav-item ${activeView === item.label ? 'active' : ''}`}
               onClick={() => {
-                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Predictive Forecasting' || item.label === 'Utilisation' || item.label === 'Tutors' || item.label === 'Settings') setActiveView(item.label)
+                if (item.label === 'Dashboard' || item.label === 'Forecast' || item.label === 'Predictive Forecasting' || item.label === 'Private Model' || item.label === 'Utilisation' || item.label === 'Tutors' || item.label === 'Settings') setActiveView(item.label)
               }}
             >
               <LineIcon path={item.path} />
@@ -224,6 +250,8 @@ function App() {
             selectedWorkstream={selectedWorkstream}
             onWorkstreamChange={setSelectedWorkstream}
           />
+        ) : activeView === 'Private Model' && privateModelAccess?.can_view ? (
+          <PrivateModelView access={privateModelAccess} />
         ) : activeView === 'Utilisation' ? (
           <UtilisationView
             forecast={forecast}

@@ -447,6 +447,27 @@ and user-directory tables.
 The Easy Auth client credential is stored by Container Apps, is not part of this
 repository, and must be rotated before 11 August 2027.
 
+### Private Model workspace
+
+The Private Model tab is a separate, restricted workspace for a future model. It
+currently displays a read-only snapshot from the same live Capacity forecast but
+does **not** introduce or change any forecast calculations. The tab appears only
+when `GET /api/v1/private-model/access` confirms the signed-in Entra user is the
+owner or has an active grant. `GET /api/v1/private-model/forecast` independently
+checks that permission before returning data; hiding the navigation item is not
+the security boundary.
+
+Set `CAPACITY_PRIVATE_MODEL_OWNER_OBJECT_ID` to the intended owner's immutable
+Entra Object ID in the Azure app configuration. If this setting is missing, the
+workspace fails closed. Only that exact identity can list registered users and
+grant or revoke access through the Private Model tab. Capacity administrators
+have no automatic access and cannot manage its grants. A recipient first signs
+in to the app so their identity is recorded in `capacity.app_user`; the owner
+then selects them by name. Grants and audit details live only in
+`capacity.private_model_grant`, created by Capacity migration
+`backend/migrations/012_add_private_model_access.sql`. Attendance is never
+modified by this workspace.
+
 The narrowly scoped Attendance managed-identity scripts are kept separately in
 `backend/migrations/attendance`. They must be run by the Attendance server's
 configured Microsoft Entra administrator: script `001` against `postgres`, then

@@ -308,6 +308,42 @@ class AppUserRecord(BaseModel):
     last_seen_at: datetime
 
 
+class PrivateModelAccessResponse(BaseModel):
+    can_view: bool
+    is_owner: bool
+
+
+class PrivateModelGrantRecord(BaseModel):
+    object_id: str
+    display_name: str
+    email: str | None = None
+    granted_at: datetime
+    granted_by: str
+
+
+class PrivateModelDirectoryResponse(BaseModel):
+    owner_object_id: str
+    registered_users: list[AppUserRecord]
+    grants: list[PrivateModelGrantRecord]
+
+
+class PrivateModelGrantRequest(BaseModel):
+    object_id: str
+
+    @field_validator("object_id")
+    @classmethod
+    def normalise_object_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value.strip()))
+        except (AttributeError, ValueError):
+            raise ValueError("object_id must be a Microsoft Entra Object ID") from None
+
+
+class PrivateModelRevokeResponse(BaseModel):
+    object_id: str
+    revoked: bool
+
+
 class AdminUserRecord(BaseModel):
     object_id: str
     display_name: str

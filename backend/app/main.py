@@ -48,6 +48,11 @@ from .models import (
     PredictiveForecastResponse,
     MonthlyMovementRate,
     MonthlyMovementRateUpdate,
+    PrivateModelAccessResponse,
+    PrivateModelDirectoryResponse,
+    PrivateModelGrantRecord,
+    PrivateModelGrantRequest,
+    PrivateModelRevokeResponse,
     PlannedCohortRecord,
     PlannedCohortUpdateRequest,
     ProgrammePlanningRecord,
@@ -65,6 +70,13 @@ from .models import (
 )
 from .predictive_forecast import build_predictive_forecast
 from .predictive_movements import fetch_movement_rates, save_movement_rate
+from .private_model_access import (
+    fetch_private_model_grants,
+    has_private_model_grant,
+    private_model_owner_id,
+    revoke_private_model_grant,
+    save_private_model_grant,
+)
 from .programme_planning import (
     academic_year_for,
     fetch_programme_aliases,
@@ -115,6 +127,42 @@ def require_capacity_admin(request: Request) -> AppUser:
     return require_admin_user(resolve_capacity_user(request), settings)
 
 
+def require_private_model_owner(request: Request) -> AppUser:
+    if not settings.auth_enabled or settings.database_mode.lower() != "live":
+        raise HTTPException(status_code=503, detail="Private model access is not configured")
+    owner_id = private_model_owner_id(settings.private_model_owner_object_id)
+    if not owner_id:
+        raise HTTPException(status_code=503, detail="Private model owner is not configured")
+    user = resolve_user(request, settings)
+    if not user.authenticated or not user.object_id:
+        raise HTTPException(status_code=401, detail="Sign in is required")
+    if user.object_id.lower() != owner_id:
+        raise HTTPException(status_code=403, detail="Only the private model owner can manage access")
+    return user
+
+
+def require_private_model_viewer(request: Request) -> AppUser:
+    if not settings.auth_enabled or settings.database_mode.lower() != "live":
+        raise HTTPException(status_code=503, detail="Private model access is not configured")
+    owner_id = private_model_owner_id(settings.private_model_owner_object_id)
+    if not owner_id:
+        raise HTTPException(status_code=503, detail="Private model owner is not configured")
+    user = resolve_user(request, settings)
+    if not user.authenticated or not user.object_id:
+        raise HTTPException(status_code=401, detail="Sign in is required")
+    if user.object_id.lower() == owner_id:
+        return user
+    try:
+        with capacity_connection(settings) as capacity:
+            granted = has_private_model_grant(capacity, user.object_id)
+    except Exception:
+        logger.exception("Private model access lookup failed")
+        raise HTTPException(status_code=503, detail="Private model access could not be checked") from None
+    if not granted:
+        raise HTTPException(status_code=403, detail="Private model access is required")
+    return user
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "healthy", "environment": settings.environment}
@@ -141,6 +189,100 @@ def session(request: Request) -> SessionResponse:
         display_name=user.display_name,
         email=user.email,
     )
+
+
+@app.get("/api/v1/private-model/access", response_model=PrivateModelAccessResponse)
+def private_model_access(request: Request) -> PrivateModelAccessResponse:
+    owner_id = private_model_owner_id(settings.private_model_owner_object_id)
+    if not settings.auth_enabled or settings.database_mode.lower() != "live" or not owner_id:
+        return PrivateModelAccessResponse(can_view=False, is_owner=False)
+    user = resolve_user(request, settings)
+    if not user.authenticated or not user.object_id:
+        return PrivateModelAccessResponse(can_view=False, is_owner=False)
+    if user.object_id.lower() == owner_id:
+        return PrivateModelAccessResponse(can_view=True, is_owner=True)
+    try:
+        with capacity_connection(settings) as capacity:
+            granted = has_private_model_grant(capacity, user.object_id)
+    except Exception:
+        logger.exception("Private model access status failed")
+        raise HTTPException(status_code=503, detail="Private model access could not be checked") from None
+    return PrivateModelAccessResponse(can_view=granted, is_owner=False)
+
+
+@app.get("/api/v1/private-model/users", response_model=PrivateModelDirectoryResponse)
+def private_model_users(request: Request) -> PrivateModelDirectoryResponse:
+    owner = require_private_model_owner(request)
+    try:
+        with capacity_connection(settings) as capacity:
+            return PrivateModelDirectoryResponse(
+                owner_object_id=owner.object_id or "",
+                registered_users=fetch_app_users(capacity),
+                grants=fetch_private_model_grants(capacity),
+            )
+    except Exception:
+        logger.exception("Private model access directory failed")
+        raise HTTPException(status_code=503, detail="Private model users are unavailable") from None
+
+
+@app.put("/api/v1/private-model/users/{object_id}", response_model=PrivateModelGrantRecord)
+def grant_private_model_user(object_id: str, request: Request) -> PrivateModelGrantRecord:
+    owner = require_private_model_owner(request)
+    try:
+        target_id = PrivateModelGrantRequest(object_id=object_id).object_id
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    if target_id.lower() == owner.object_id.lower():
+        raise HTTPException(status_code=409, detail="The owner already has access")
+    try:
+        with capacity_connection(settings) as capacity:
+            saved = save_private_model_grant(
+                capacity, object_id=target_id, granted_by=owner.object_id
+            )
+        if saved is None:
+            raise HTTPException(
+                status_code=404,
+                detail="This user must sign in to Capacity Tracker before access can be granted",
+            )
+        return saved
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Private model grant failed")
+        raise HTTPException(status_code=503, detail="Private model access could not be granted") from None
+
+
+@app.delete(
+    "/api/v1/private-model/users/{object_id}",
+    response_model=PrivateModelRevokeResponse,
+)
+def revoke_private_model_user(object_id: str, request: Request) -> PrivateModelRevokeResponse:
+    owner = require_private_model_owner(request)
+    try:
+        target_id = PrivateModelGrantRequest(object_id=object_id).object_id
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+    if target_id.lower() == owner.object_id.lower():
+        raise HTTPException(status_code=409, detail="Owner access cannot be removed")
+    try:
+        with capacity_connection(settings) as capacity:
+            revoked = revoke_private_model_grant(
+                capacity, object_id=target_id, revoked_by=owner.object_id
+            )
+        if not revoked:
+            raise HTTPException(status_code=404, detail="Active grant not found")
+        return PrivateModelRevokeResponse(object_id=target_id, revoked=True)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Private model revoke failed")
+        raise HTTPException(status_code=503, detail="Private model access could not be removed") from None
+
+
+@app.get("/api/v1/private-model/forecast", response_model=ForecastResponse)
+def private_model_forecast(request: Request) -> ForecastResponse:
+    require_private_model_viewer(request)
+    return live_forecast()
 
 
 @app.get("/api/v1/admin-users", response_model=AdminUserListResponse)
