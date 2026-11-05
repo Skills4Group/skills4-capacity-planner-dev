@@ -235,6 +235,16 @@ export interface PrivateModelAccessResponse {
   is_owner: boolean
 }
 
+export interface PrivateModelAssumptions {
+  effective_month: string
+  cohort_size: number
+  monthly_tutor_cost: number | null
+  average_contract_value: number | null
+  enrolment_drop_percent: number
+  updated_at: string | null
+  updated_by: string | null
+}
+
 export interface PrivateModelGrantRecord {
   object_id: string
   display_name: string

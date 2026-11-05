@@ -344,6 +344,38 @@ class PrivateModelRevokeResponse(BaseModel):
     revoked: bool
 
 
+class PrivateModelAssumptions(BaseModel):
+    effective_month: date
+    cohort_size: int = Field(ge=1, le=250)
+    monthly_tutor_cost: float | None = Field(default=None, ge=0, le=1_000_000, allow_inf_nan=False)
+    average_contract_value: float | None = Field(default=None, ge=0, le=1_000_000, allow_inf_nan=False)
+    enrolment_drop_percent: float = Field(ge=0, le=100, allow_inf_nan=False)
+    updated_at: datetime | None = None
+    updated_by: str | None = None
+
+    @field_validator("effective_month")
+    @classmethod
+    def validate_month_start(cls, value: date) -> date:
+        if value.day != 1:
+            raise ValueError("effective_month must be the first day of a month")
+        return value
+
+
+class PrivateModelAssumptionsUpdate(BaseModel):
+    effective_month: date
+    cohort_size: int = Field(ge=1, le=250)
+    monthly_tutor_cost: float | None = Field(ge=0, le=1_000_000, allow_inf_nan=False)
+    average_contract_value: float | None = Field(ge=0, le=1_000_000, allow_inf_nan=False)
+    enrolment_drop_percent: float = Field(ge=0, le=100, allow_inf_nan=False)
+
+    @field_validator("effective_month")
+    @classmethod
+    def validate_month_start(cls, value: date) -> date:
+        if value.day != 1:
+            raise ValueError("effective_month must be the first day of a month")
+        return value
+
+
 class AdminUserRecord(BaseModel):
     object_id: str
     display_name: str

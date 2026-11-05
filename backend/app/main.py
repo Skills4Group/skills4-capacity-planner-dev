@@ -49,6 +49,8 @@ from .models import (
     MonthlyMovementRate,
     MonthlyMovementRateUpdate,
     PrivateModelAccessResponse,
+    PrivateModelAssumptions,
+    PrivateModelAssumptionsUpdate,
     PrivateModelDirectoryResponse,
     PrivateModelGrantRecord,
     PrivateModelGrantRequest,
@@ -76,6 +78,10 @@ from .private_model_access import (
     private_model_owner_id,
     revoke_private_model_grant,
     save_private_model_grant,
+)
+from .private_model_assumptions import (
+    fetch_private_model_assumptions,
+    save_private_model_assumptions,
 )
 from .programme_planning import (
     academic_year_for,
@@ -283,6 +289,38 @@ def revoke_private_model_user(object_id: str, request: Request) -> PrivateModelR
 def private_model_forecast(request: Request) -> ForecastResponse:
     require_private_model_viewer(request)
     return live_forecast()
+
+
+@app.get("/api/v1/private-model/predictive-forecast", response_model=PredictiveForecastResponse)
+def private_model_predictive_forecast(request: Request) -> PredictiveForecastResponse:
+    require_private_model_viewer(request)
+    return live_predictive_forecast()
+
+
+@app.get("/api/v1/private-model/assumptions", response_model=PrivateModelAssumptions)
+def private_model_assumptions(request: Request) -> PrivateModelAssumptions:
+    require_private_model_viewer(request)
+    try:
+        with capacity_connection(settings) as capacity:
+            return fetch_private_model_assumptions(capacity)
+    except Exception:
+        logger.exception("Private model assumptions lookup failed")
+        raise HTTPException(status_code=503, detail="Private model assumptions are unavailable") from None
+
+
+@app.put("/api/v1/private-model/assumptions", response_model=PrivateModelAssumptions)
+def update_private_model_assumptions(
+    values: PrivateModelAssumptionsUpdate, request: Request
+) -> PrivateModelAssumptions:
+    owner = require_private_model_owner(request)
+    try:
+        with capacity_connection(settings) as capacity:
+            return save_private_model_assumptions(
+                capacity, values=values, updated_by=owner.object_id or ""
+            )
+    except Exception:
+        logger.exception("Private model assumptions update failed")
+        raise HTTPException(status_code=503, detail="Private model assumptions could not be saved") from None
 
 
 @app.get("/api/v1/admin-users", response_model=AdminUserListResponse)

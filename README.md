@@ -449,13 +449,54 @@ repository, and must be rotated before 11 August 2027.
 
 ### Private Model workspace
 
-The Private Model tab is a separate, restricted workspace for a future model. It
-currently displays a read-only snapshot from the same live Capacity forecast but
-does **not** introduce or change any forecast calculations. The tab appears only
+The Private Model tab is a separate, restricted financial stress-test workspace.
+It reads the live Capacity forecast and P80 Predictive Forecasting output, but
+does **not** change either forecast's calculations. The tab appears only
 when `GET /api/v1/private-model/access` confirms the signed-in Entra user is the
-owner or has an active grant. `GET /api/v1/private-model/forecast` independently
-checks that permission before returning data; hiding the navigation item is not
-the security boundary.
+owner or has an active grant. Its forecast, predictive forecast and assumptions
+endpoints each independently check that permission; hiding the navigation item
+is not the security boundary.
+
+The model has five shared levers: first affected start month, percentage drop in
+**all** new starts (45% default worst case), target learners per tutor (50 default),
+average total contract value per new starter, and monthly tutor cost. The latter
+two are deliberately blank until entered; unknown amounts are never treated as
+zero. Changes preview instantly for anyone with access, but only the owner can
+save shared assumptions. They are stored in the Capacity-owned
+`capacity.private_model_assumption` table by migration
+`backend/migrations/013_add_private_model_assumptions.sql`. The owner-only
+`PUT /api/v1/private-model/assumptions` endpoint never writes to Attendance.
+
+For each forecast workstream/month, scenario starts equal
+`round(P80 predicted starts * (1 - drop percentage))` from the effective month;
+earlier starts are unchanged. The existing predictive-scenario adjustment carries
+the missing starter cohorts forward for that workstream's median duration, using
+the saved BIL/OOF rate from each cohort's start month. It does not reduce existing
+learners afresh or compound the drop every month. This workstream-duration
+approximation may differ from individual future learners' end dates. Operations
+is excluded. The staffing and finance calculations are:
+
+```text
+baseline tutors required = sum by workstream ceil(P80 active learners / 50)
+scenario tutors required = sum by workstream ceil(scenario active learners / target cohort size)
+scenario cash in = scenario new starts * average total contract value
+scenario tutor payroll = scenario tutors required * monthly tutor cost
+scenario cash margin = scenario cash in - scenario tutor payroll
+cumulative cash margin = sum of monthly cash margins
+```
+
+The tab compares baseline and scenario learners, starts, required tutors, cash in,
+payroll and cash margin month by month. Available tutors are distinct tutors with
+positive capacity in the rolling forecast; a hire/surplus figure compares that
+count with scenario required tutors. Because cross-workstream tutor assignments
+are not jointly optimised, this figure is indicative. The model assumes the
+full contract value is collected in the start month and tutor staffing adjusts
+immediately to the requirement. Cash received for existing learners before the
+forecast horizon is omitted even though their ongoing tutor cost is included.
+The absolute cash margin is therefore a **cash-flow proxy, not accounting profit**;
+the baseline-to-scenario difference is more meaningful than its absolute value.
+It excludes overhead, technology costs, collection risk, and other financial
+factors.
 
 Set `CAPACITY_PRIVATE_MODEL_OWNER_OBJECT_ID` to the intended owner's immutable
 Entra Object ID in the Azure app configuration. If this setting is missing, the
