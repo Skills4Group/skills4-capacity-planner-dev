@@ -3301,7 +3301,9 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 .private-model-metrics span, .private-model-metrics strong { display: block; }
 .private-model-metrics span { color: #68738a; font-size: 12px; }
 .private-model-metrics strong { margin-top: 8px; font-size: 24px; }
-.private-model-impact-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.private-model-impact-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.private-model-formula { display: block; margin-top: 10px; color: #68738a; font-size: 11px; line-height: 1.35; }
+.private-model-coverage-warning { margin-top: 16px; padding: 12px 14px; border: 1px solid #e7b1bd; border-radius: 7px; background: #fff3f5; color: #9b2340 !important; font-size: 12px; }
 .private-model-grant-form { display: flex; align-items: end; gap: 12px; margin-top: 20px; }
 .private-model-grant-form label { display: grid; gap: 6px; min-width: min(100%, 420px); color: #68738a; font-size: 12px; }
 .private-model-grant-form select { min-height: 40px; padding: 8px 12px; border: 1px solid #d9dfeb; border-radius: 6px; background: #fff; }

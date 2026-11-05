@@ -238,6 +238,7 @@ export interface PrivateModelAccessResponse {
 export interface PrivateModelAssumptions {
   effective_month: string
   cohort_size: number
+  staffed_tutors: number | null
   monthly_tutor_cost: number | null
   average_contract_value: number | null
   enrolment_drop_percent: number

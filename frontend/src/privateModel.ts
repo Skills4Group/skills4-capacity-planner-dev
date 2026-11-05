@@ -12,6 +12,8 @@ export interface PrivateModelMonth {
   availableTutors: number
   baselineTutorsRequired: number
   scenarioTutorsRequired: number
+  staffedTutors: number
+  headcountChange: number
   additionalTutors: number
   potentialSurplus: number
   baselineCashIn: number | null
@@ -74,12 +76,13 @@ export function buildPrivateModel(
     const availableTutors = new Set(capacity.tutor_months
       .filter((row) => row.month === month && row.capacity > 0 && row.workstream !== 'Operations')
       .map((row) => row.tutor_id)).size
+    const staffedTutors = assumptions.staffed_tutors ?? scenarioTutorsRequired
     const contract = assumptions.average_contract_value
     const tutorCost = assumptions.monthly_tutor_cost
     const baselineCashIn = contract === null ? null : money(baselineStarts * contract)
     const scenarioCashIn = contract === null ? null : money(scenarioStarts * contract)
     const baselinePayroll = tutorCost === null ? null : money(baselineTutorsRequired * tutorCost)
-    const scenarioPayroll = tutorCost === null ? null : money(scenarioTutorsRequired * tutorCost)
+    const scenarioPayroll = tutorCost === null ? null : money(staffedTutors * tutorCost)
     const baselineMargin = baselineCashIn === null || baselinePayroll === null
       ? null : money(baselineCashIn - baselinePayroll)
     const scenarioMargin = scenarioCashIn === null || scenarioPayroll === null
@@ -89,9 +92,10 @@ export function buildPrivateModel(
 
     return {
       month, baselineStarts, scenarioStarts, baselineActive, scenarioActive,
-      availableTutors, baselineTutorsRequired, scenarioTutorsRequired,
-      additionalTutors: Math.max(0, scenarioTutorsRequired - availableTutors),
-      potentialSurplus: Math.max(0, availableTutors - scenarioTutorsRequired),
+      availableTutors, baselineTutorsRequired, scenarioTutorsRequired, staffedTutors,
+      headcountChange: staffedTutors - availableTutors,
+      additionalTutors: Math.max(0, scenarioTutorsRequired - staffedTutors),
+      potentialSurplus: Math.max(0, staffedTutors - scenarioTutorsRequired),
       baselineCashIn, scenarioCashIn, baselinePayroll, scenarioPayroll,
       baselineMargin, scenarioMargin,
       cumulativeBaselineMargin: baselineMargin === null ? null : cumulativeBaseline,

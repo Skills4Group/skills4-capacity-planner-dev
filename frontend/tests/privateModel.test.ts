@@ -32,7 +32,8 @@ const capacity = {
   tutor_months: months.map((month) => ({ month, tutor_id: 'one', capacity: 50, workstream: 'Pharmacy' })),
 } as ForecastResponse
 const assumptions: PrivateModelAssumptions = {
-  effective_month: months[0], cohort_size: 40, monthly_tutor_cost: 2000,
+  effective_month: months[0], cohort_size: 40, staffed_tutors: null,
+  monthly_tutor_cost: 2000,
   average_contract_value: 1000, enrolment_drop_percent: 45,
   updated_at: null, updated_by: null,
 }
@@ -63,4 +64,22 @@ test('unset financial levers do not display a zero margin', () => {
   assert.equal(result[0].scenarioCashIn, null)
   assert.equal(result[0].scenarioPayroll, null)
   assert.equal(result[0].scenarioMargin, null)
+})
+
+test('fixed staffed tutor lever changes payroll and reveals uncovered demand', () => {
+  const result = buildPrivateModel(predictive, capacity, { ...assumptions, staffed_tutors: 1 })
+  assert.equal(result[0].scenarioTutorsRequired, 2)
+  assert.equal(result[0].staffedTutors, 1)
+  assert.equal(result[0].additionalTutors, 1)
+  assert.equal(result[0].scenarioPayroll, 2_000)
+  assert.equal(result[0].scenarioCashIn, 55_000)
+  assert.equal(result[0].scenarioMargin, 53_000)
+  assert.equal(result[0].headcountChange, 0)
+})
+
+test('zero staffed tutors is a valid stress input, not auto staffing', () => {
+  const result = buildPrivateModel(predictive, capacity, { ...assumptions, staffed_tutors: 0 })
+  assert.equal(result[0].staffedTutors, 0)
+  assert.equal(result[0].scenarioPayroll, 0)
+  assert.equal(result[0].additionalTutors, 2)
 })

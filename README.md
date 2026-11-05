@@ -457,14 +457,19 @@ owner or has an active grant. Its forecast, predictive forecast and assumptions
 endpoints each independently check that permission; hiding the navigation item
 is not the security boundary.
 
-The model has five shared levers: first affected start month, percentage drop in
+The model has six shared levers: first affected start month, percentage drop in
 **all** new starts (45% default worst case), target learners per tutor (50 default),
-average total contract value per new starter, and monthly tutor cost. The latter
-two are deliberately blank until entered; unknown amounts are never treated as
-zero. Changes preview instantly for anyone with access, but only the owner can
+optional fixed number of employed tutors, average total contract value per new
+starter, and monthly tutor cost. Tutor count is blank by default, meaning staffing
+automatically follows each month's calculated requirement. If entered (including
+zero), the same number is employed in every forecast month. The two financial
+amounts are deliberately blank until entered; unknown amounts are never treated
+as zero. Changes preview instantly for anyone with access, but only the owner can
 save shared assumptions. They are stored in the Capacity-owned
 `capacity.private_model_assumption` table by migration
-`backend/migrations/013_add_private_model_assumptions.sql`. The owner-only
+`backend/migrations/013_add_private_model_assumptions.sql`; migration
+`backend/migrations/014_add_private_model_staffed_tutors.sql` adds the optional
+headcount lever. The owner-only
 `PUT /api/v1/private-model/assumptions` endpoint never writes to Attendance.
 
 For each forecast workstream/month, scenario starts equal
@@ -479,19 +484,23 @@ is excluded. The staffing and finance calculations are:
 ```text
 baseline tutors required = sum by workstream ceil(P80 active learners / 50)
 scenario tutors required = sum by workstream ceil(scenario active learners / target cohort size)
+scenario tutors employed = fixed tutor lever, or scenario tutors required when blank
 scenario cash in = scenario new starts * average total contract value
-scenario tutor payroll = scenario tutors required * monthly tutor cost
+scenario tutor payroll = scenario tutors employed * monthly tutor cost
 scenario cash margin = scenario cash in - scenario tutor payroll
 cumulative cash margin = sum of monthly cash margins
+coverage gap = max(0, scenario tutors required - scenario tutors employed)
 ```
 
 The tab compares baseline and scenario learners, starts, required tutors, cash in,
 payroll and cash margin month by month. Available tutors are distinct tutors with
 positive capacity in the rolling forecast; a hire/surplus figure compares that
-count with scenario required tutors. Because cross-workstream tutor assignments
-are not jointly optimised, this figure is indicative. The model assumes the
-full contract value is collected in the start month and tutor staffing adjusts
-immediately to the requirement. Cash received for existing learners before the
+count with scenario employed tutors. Coverage compares the modelled employed
+number with the calculated requirement and warns when staffing falls short;
+forecast starts and cash receipts are **not** reduced to fit understaffing.
+Because cross-workstream tutor assignments are not jointly optimised, staffing
+figures are indicative. The model assumes the full contract value is collected
+in the start month. Cash received for existing learners before the
 forecast horizon is omitted even though their ongoing tutor cost is included.
 The absolute cash margin is therefore a **cash-flow proxy, not accounting profit**;
 the baseline-to-scenario difference is more meaningful than its absolute value.

@@ -152,6 +152,7 @@ def test_private_model_financial_assumptions_are_owner_written(monkeypatch) -> N
     assert client.get("/api/v1/private-model/assumptions").status_code == 401
     body = {
         "effective_month": "2026-12-01", "cohort_size": 50,
+        "staffed_tutors": 0,
         "monthly_tutor_cost": 3000, "average_contract_value": 9000,
         "enrolment_drop_percent": 45,
     }
@@ -159,6 +160,7 @@ def test_private_model_financial_assumptions_are_owner_written(monkeypatch) -> N
     assert client.put("/api/v1/private-model/assumptions", headers=_headers(OWNER), json=body).status_code == 200
     assert captured[0][1] == OWNER
     assert captured[0][0].average_contract_value == 9000
+    assert captured[0][0].staffed_tutors == 0
 
 
 def test_private_model_rejects_invalid_financial_inputs(monkeypatch) -> None:
@@ -168,4 +170,7 @@ def test_private_model_rejects_invalid_financial_inputs(monkeypatch) -> None:
         "monthly_tutor_cost": -1, "average_contract_value": 9000,
         "enrolment_drop_percent": 120,
     }
+    assert client.put("/api/v1/private-model/assumptions", headers=_headers(OWNER), json=body).status_code == 422
+    body.update(effective_month="2026-12-01", cohort_size=50, monthly_tutor_cost=3000,
+                enrolment_drop_percent=45, staffed_tutors=-1)
     assert client.put("/api/v1/private-model/assumptions", headers=_headers(OWNER), json=body).status_code == 422
