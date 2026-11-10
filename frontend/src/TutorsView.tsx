@@ -185,10 +185,9 @@ export function TutorsView({
 
   function addAllocation(tutorId: string) {
     const used = new Set(drafts[tutorId]?.allocations.map((row) => row.programmeCode) ?? [])
-    const programme = programmes.find((row) => row.active && !used.has(row.programme_code))
-    if (!programme) return
+    if (!programmes.some((row) => row.active && row.programme_code !== 'pharmacy-general' && !used.has(row.programme_code))) return
     changeDraft(tutorId, {
-      allocations: [...(drafts[tutorId]?.allocations ?? []), { programmeCode: programme.programme_code, capacity: '0' }],
+      allocations: [...(drafts[tutorId]?.allocations ?? []), { programmeCode: '', capacity: '0' }],
     })
   }
 
@@ -207,7 +206,7 @@ export function TutorsView({
     }))
     const allocationTotal = allocations.reduce((sum, row) => sum + row.capacity, 0)
     const uniqueCodes = new Set(draft.allocations.map((row) => row.programmeCode))
-    if (!session.is_admin || !allocations.length || allocations.some((row) => !row.programme || !Number.isInteger(row.capacity) || row.capacity < 0) || uniqueCodes.size !== allocations.length || allocationTotal !== capacity || !Number.isInteger(capacity) || capacity < 0 || capacity > 250) return
+    if (!session.is_admin || !allocations.length || allocations.some((row) => !row.programme || !row.programme.active || row.programme.programme_code === 'pharmacy-general' || !Number.isInteger(row.capacity) || row.capacity < 0) || uniqueCodes.size !== allocations.length || allocationTotal !== capacity || !Number.isInteger(capacity) || capacity < 0 || capacity > 250) return
     const primaryWorkstream = allocations[0].programme!.workstream
     setSavingId(tutor.tutor_id)
     setError('')
@@ -391,7 +390,7 @@ export function TutorsView({
           </div>
           <div className="tutor-tools">
             <label><span>View</span><select value={workstreamFilter} onChange={(event) => setWorkstreamFilter(event.target.value as typeof workstreamFilter)}><option>All</option><option>New</option><option>Inactive</option><option>Non-delivery</option>{workstreams.map((workstream) => <option key={workstream}>{workstream}</option>)}<option>Unassigned</option></select></label>
-            <label><span>Programme</span><select value={programmeFilter} onChange={(event) => setProgrammeFilter(event.target.value)}><option value="All">All programmes</option>{programmes.filter((programme) => programme.active && programme.workstream !== 'Operations').map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name}</option>)}</select></label>
+            <label><span>Programme</span><select value={programmeFilter} onChange={(event) => setProgrammeFilter(event.target.value)}><option value="All">All programmes</option>{programmes.filter((programme) => programme.active && programme.workstream !== 'Operations' && programme.programme_code !== 'pharmacy-general').map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name}</option>)}</select></label>
             <label><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Tutor name or ID" /></label>
             <div className="tutor-download-control"><span>Export</span><button type="button" disabled={loading || visibleTutors.length === 0} onClick={downloadTutorDirectory}>Download CSV <small>{visibleTutors.length}</small></button></div>
           </div>
@@ -425,7 +424,7 @@ export function TutorsView({
                 const draftAllocations = draft.allocations.map((row) => `${row.programmeCode}:${Number(row.capacity)}`).sort().join('|')
                 const allocationTotal = draft.allocations.reduce((sum, row) => sum + Number(row.capacity || 0), 0)
                 const validAllocations = draft.allocations.length > 0
-                  && draft.allocations.every((row) => row.programmeCode && Number.isInteger(Number(row.capacity)) && Number(row.capacity) >= 0)
+                  && draft.allocations.every((row) => row.programmeCode && row.programmeCode !== 'pharmacy-general' && Number.isInteger(Number(row.capacity)) && Number(row.capacity) >= 0)
                   && new Set(draft.allocations.map((row) => row.programmeCode)).size === draft.allocations.length
                   && allocationTotal === draftCapacity
                 const dirty = draftCapacity !== tutor.capacity
@@ -445,7 +444,7 @@ export function TutorsView({
                 return (
                   <tr key={tutor.tutor_id} className={`${draft.allocations.length === 0 && tutor.workstream === null && tutor.is_active ? 'unassigned-row' : ''} ${draft.onMaternityLeave && tutor.is_active ? 'maternity-row' : ''} ${tutor.is_new ? 'new-tutor-row' : ''} ${!tutor.is_active ? 'inactive-tutor-row' : ''}`}>
                     <td><strong>{tutor.tutor_name}{tutor.is_new && <span className="new-tutor-pill">New</span>}</strong><small>{tutor.tutor_id}</small>{tutor.first_seen_at && <small>First seen {discoveredFormatter.format(new Date(tutor.first_seen_at))}</small>}</td>
-                    <td><div className="tutor-allocation-editor">{draft.allocations.map((allocation, index) => <div className="tutor-allocation-row" key={`${index}:${allocation.programmeCode}`}><select aria-label={`${tutor.tutor_name} allocation ${index + 1} programme`} value={allocation.programmeCode} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { programmeCode: event.target.value })}><option value="">Select programme</option>{programmes.filter((programme) => programme.active).map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name} — {programme.workstream}</option>)}</select><input aria-label={`${tutor.tutor_name} allocation ${index + 1} capacity`} type="number" min="0" max="250" value={allocation.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { capacity: event.target.value })} /><button type="button" aria-label={`Remove allocation ${index + 1} for ${tutor.tutor_name}`} disabled={!session.is_admin || !tutor.is_active || draft.allocations.length === 1} onClick={() => removeAllocation(tutor.tutor_id, index)}>×</button></div>)}<div className={`allocation-total ${validAllocations ? 'valid' : 'invalid'}`}><span>{allocationTotal} of {draftCapacity || 0} places allocated</span><button type="button" disabled={!session.is_admin || !tutor.is_active || draft.allocations.length >= programmes.filter((programme) => programme.active).length} onClick={() => addAllocation(tutor.tutor_id)}>+ Add programme</button></div></div></td>
+                    <td><div className="tutor-allocation-editor">{draft.allocations.map((allocation, index) => <div className="tutor-allocation-row" key={`${index}:${allocation.programmeCode}`}><select aria-label={`${tutor.tutor_name} allocation ${index + 1} programme`} value={allocation.programmeCode} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { programmeCode: event.target.value })}><option value="">Select programme</option>{allocation.programmeCode === 'pharmacy-general' && <option value="pharmacy-general" disabled>Unclassified Pharmacy — select L2 or L3</option>}{programmes.filter((programme) => programme.active && programme.programme_code !== 'pharmacy-general').map((programme) => <option key={programme.programme_code} value={programme.programme_code}>{programme.display_name} — {programme.workstream}</option>)}</select><input aria-label={`${tutor.tutor_name} allocation ${index + 1} capacity`} type="number" min="0" max="250" value={allocation.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeAllocation(tutor.tutor_id, index, { capacity: event.target.value })} /><button type="button" aria-label={`Remove allocation ${index + 1} for ${tutor.tutor_name}`} disabled={!session.is_admin || !tutor.is_active || draft.allocations.length === 1} onClick={() => removeAllocation(tutor.tutor_id, index)}>×</button></div>)}<div className={`allocation-total ${validAllocations ? 'valid' : 'invalid'}`}><span>{allocationTotal} of {draftCapacity || 0} places allocated</span><button type="button" disabled={!session.is_admin || !tutor.is_active || draft.allocations.length >= programmes.filter((programme) => programme.active && programme.programme_code !== 'pharmacy-general').length} onClick={() => addAllocation(tutor.tutor_id)}>+ Add programme</button></div></div></td>
                     <td><strong>{tutor.current_caseload}</strong></td>
                     <td><strong>{tutor.active_cohorts}</strong></td>
                     <td><div className={`capacity-input ${!validCapacity ? 'invalid' : ''}`}><input aria-label={`${tutor.tutor_name} maximum capacity`} type="number" min="0" max="250" step="1" value={draft.capacity} disabled={!session.is_admin || !tutor.is_active} onChange={(event) => changeDraft(tutor.tutor_id, { capacity: event.target.value })} /><span>learners</span></div></td>

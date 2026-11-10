@@ -27,7 +27,6 @@ test('selects today snapshot independently of the selected forecast month', () =
   assert.equal(selectCurrentSnapshot(forecast, 'All')?.learners, 80)
   assert.equal(selectCurrentSnapshot(forecast, 'Pharmacy')?.learners, 30)
   assert.equal(selectCurrentSnapshot(forecast, 'pharmacy-l3')?.learners, 20)
-  assert.equal(selectCurrentSnapshot(forecast, 'pharmacy-general'), undefined)
 })
 
 test('zero capacity is not presented as zero percent utilisation', () => {

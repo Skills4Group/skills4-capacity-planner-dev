@@ -1,7 +1,6 @@
 import type { Workstream } from './types.ts'
 
 export const pharmacyProgrammeFilters = [
-  'pharmacy-general',
   'pharmacy-l2',
   'pharmacy-l3',
 ] as const
@@ -14,7 +13,6 @@ export const reportingFilterLabels: Record<ReportingFilter, string> = {
   All: 'All workstreams',
   Dental: 'Dental',
   Pharmacy: 'Pharmacy (all)',
-  'pharmacy-general': 'Pharmacy (general)',
   'pharmacy-l2': 'Pharmacy L2',
   'pharmacy-l3': 'Pharmacy L3',
   Housing: 'Housing',
@@ -33,9 +31,7 @@ export const reportingFilterOptions: ReportingFilter[] = [
   'Business',
 ]
 
-export const dashboardFilterOptions = reportingFilterOptions.filter(
-  (filter) => filter !== 'pharmacy-general',
-)
+export const dashboardFilterOptions = reportingFilterOptions
 
 export const reportingScopeOptions = reportingFilterOptions.filter(
   (filter): filter is ReportingScope => filter !== 'All',

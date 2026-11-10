@@ -84,7 +84,7 @@ export function PredictiveForecastView({
   const [source, setSource] = useState<'live' | 'demo'>('live')
   const [error, setError] = useState('')
   const [scenarioOpen, setScenarioOpen] = useState(false)
-  const [scenarioWorkstream, setScenarioWorkstream] = useState<ReportingScope>('pharmacy-general')
+  const [scenarioWorkstream, setScenarioWorkstream] = useState<ReportingScope>('pharmacy-l2')
   const [scenarioDrafts, setScenarioDrafts] = useState<ScenarioDrafts>({})
 
   const loadForecast = useCallback(async () => {
@@ -299,6 +299,9 @@ export function PredictiveForecastView({
         <div><span className={`source-pill ${source}`}>{source === 'live' ? 'Live Attendance data' : 'Demonstration data'}</span><strong>{confidenceCopy[confidence].label}</strong>{selectedScenarioCount > 0 && <span className="scenario-live-pill">Scenario applied</span>}<p>{confidenceCopy[confidence].description}. {forecast.method_description}</p></div>
         <dl><div><dt>Training period</dt><dd>{formatMonth(forecast.training_start)}–{formatMonth(forecast.training_end)}</dd></div><div><dt>Generated</dt><dd>{formatDate(forecast.generated_at)}</dd></div></dl>
       </section>
+      {(forecast.programme_summaries.find((row) => row.programme_code === 'pharmacy-general')?.historical_starts ?? 0) > 0 && (
+        <p className="dashboard-metric-note">Some historical Pharmacy starts have no confirmed level. They remain in Pharmacy (all), but are not attributed to L2 or L3.</p>
+      )}
 
       {source === 'live' && <ProgrammePlanningPanel onSaved={loadForecast} />}
       {source === 'live' && <MonthlyMovementPanel rates={forecast.movement_rates} onSaved={loadForecast} />}

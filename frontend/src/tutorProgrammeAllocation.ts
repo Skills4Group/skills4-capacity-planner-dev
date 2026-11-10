@@ -16,6 +16,10 @@ export function effectiveTutorProgrammeAllocations(
     }))
   }
 
+  // Pharmacy has two distinct levels; an inferred workstream is not enough
+  // evidence to allocate this tutor's capacity to either one.
+  if (tutor.workstream === 'Pharmacy') return []
+
   const generic = programmes.find((programme) => (
     programme.active
     && programme.workstream === tutor.workstream

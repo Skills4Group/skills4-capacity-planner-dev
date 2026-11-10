@@ -296,6 +296,9 @@ function App() {
           <article className="summary-card"><p>Utilisation</p><strong>{summary.utilisation === null ? 'No capacity' : `${summary.utilisation}%`}</strong><span>{summary.required ? `${summary.required} additional tutors required` : 'within available capacity'}</span><small className="snapshot-note">Current: {currentUtilisationLabel(currentSnapshot)}</small><i>04</i></article>
         </section>
         <p className="dashboard-metric-note">Current figures are as of {snapshotDate}. Monthly utilisation uses projected peak learners and capacity effective on the first day of {formatMonth(selectedMonth)}.</p>
+        {(forecast.programme_months.find((row) => row.month === selectedMonth && row.programme_code === 'pharmacy-general')?.peak_projected_caseload ?? 0) > 0 && (
+          <p className="dashboard-metric-note">Pharmacy (all) includes learners whose level is not confirmed in source data; they are not assigned to L2 or L3.</p>
+        )}
 
         {scenarioOpen && (
           <section className="scenario-panel" aria-label="Capacity scenario controls">

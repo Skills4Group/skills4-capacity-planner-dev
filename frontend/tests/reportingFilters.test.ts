@@ -9,24 +9,24 @@ import {
   workstreamForFilter,
 } from '../src/reportingFilters.ts'
 
-test('keeps broad Pharmacy and exposes all three Pharmacy programme filters', () => {
+test('keeps broad Pharmacy and exposes only level-specific Pharmacy filters', () => {
   assert.ok(reportingFilterOptions.includes('Pharmacy'))
-  assert.ok(reportingFilterOptions.includes('pharmacy-general'))
+  assert.ok(!reportingFilterOptions.map(String).includes('pharmacy-general'))
   assert.ok(reportingFilterOptions.includes('pharmacy-l2'))
   assert.ok(reportingFilterOptions.includes('pharmacy-l3'))
   assert.equal(reportingFilterLabels.Pharmacy, 'Pharmacy (all)')
 })
 
-test('dashboard omits Pharmacy general without removing the filter elsewhere', () => {
-  assert.ok(!dashboardFilterOptions.includes('pharmacy-general'))
+test('dashboard and other reports use the same Pharmacy filter choices', () => {
+  assert.deepEqual(dashboardFilterOptions, reportingFilterOptions)
   assert.ok(dashboardFilterOptions.includes('Pharmacy'))
   assert.ok(dashboardFilterOptions.includes('pharmacy-l2'))
   assert.ok(dashboardFilterOptions.includes('pharmacy-l3'))
-  assert.ok(reportingFilterOptions.includes('pharmacy-general'))
+  assert.ok(!reportingFilterOptions.map(String).includes('pharmacy-general'))
 })
 
 test('maps programme filters back to the Pharmacy workstream', () => {
-  for (const programme of ['pharmacy-general', 'pharmacy-l2', 'pharmacy-l3'] as const) {
+  for (const programme of ['pharmacy-l2', 'pharmacy-l3'] as const) {
     assert.equal(isProgrammeFilter(programme), true)
     assert.equal(workstreamForFilter(programme), 'Pharmacy')
   }

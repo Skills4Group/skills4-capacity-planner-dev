@@ -55,11 +55,9 @@ function tutor(overrides: Partial<TutorAdminRecord> = {}): TutorAdminRecord {
   }
 }
 
-test('uses the generic programme shown in the editor when no allocation is persisted', () => {
-  assert.deepEqual(effectiveTutorProgrammeAllocations(tutor(), programmes), [
-    { programmeCode: 'pharmacy-general', capacity: '55' },
-  ])
-  assert.equal(tutorMatchesProgramme(tutor(), programmes, 'pharmacy-general'), true)
+test('does not guess a Pharmacy level when no allocation is persisted', () => {
+  assert.deepEqual(effectiveTutorProgrammeAllocations(tutor(), programmes), [])
+  assert.equal(tutorMatchesProgramme(tutor(), programmes, 'pharmacy-l2'), false)
 })
 
 test('uses persisted programme allocations instead of the workstream fallback', () => {

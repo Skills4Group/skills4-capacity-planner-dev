@@ -24,8 +24,11 @@ programme). The source status `In End Point Assessment` is preserved as EPA
 but does not consume tutor capacity. This applies to tutor caseloads, dashboard
 and utilisation, the rolling forecast, and predictive existing demand. Historical
 learner-start counts remain historical starts.
-The Pharmacy (general) dashboard card is hidden; its filter remains available on
-other screens, while Pharmacy (all), Pharmacy L2, and Pharmacy L3 remain visible.
+Pharmacy (general) is retired from user-facing filters and planning controls.
+Pharmacy (all), Pharmacy L2, and Pharmacy L3 remain visible. Legacy or source
+records without a confirmed level remain internally unclassified and contribute
+to Pharmacy (all), but are never silently assigned to L2 or L3. Pharmacy tutors
+without an explicit programme allocation must be assigned a level by an admin.
 When a dashboard capacity scenario is open, each available tutor's scenario maximum
 is distributed across their existing workstream/programme allocations. Tutors with
 zero effective capacity remain unavailable, and a tutor teaching two workstreams
