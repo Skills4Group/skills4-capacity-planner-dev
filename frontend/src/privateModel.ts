@@ -1,7 +1,32 @@
 import { applyPredictiveScenario, predictedStartsAtConfidence, scenarioKey, type ScenarioDrafts } from './predictiveScenario.ts'
-import { reportingWorkstreams, type ForecastResponse, type PredictiveForecastResponse, type PrivateModelAssumptions, type Workstream } from './types.ts'
+import type { CurrentCapacitySnapshot, ForecastResponse, PredictiveForecastResponse, PrivateModelAssumptions } from './types.ts'
 
 const BASELINE_COHORT_SIZE = 50
+const PHARMACY_LEVELS = ['pharmacy-l2', 'pharmacy-l3'] as const
+
+export type PrivateModelScope = 'both' | (typeof PHARMACY_LEVELS)[number]
+
+export function selectedPrivateModelProgrammes(scope: PrivateModelScope): readonly (typeof PHARMACY_LEVELS)[number][] {
+  return scope === 'both' ? PHARMACY_LEVELS : [scope]
+}
+
+export function privateModelCurrentSnapshot(
+  forecast: ForecastResponse,
+  scope: PrivateModelScope,
+): Pick<CurrentCapacitySnapshot, 'learners' | 'capacity' | 'remaining_places' | 'utilisation_percent'> | null {
+  const snapshots = forecast.current_programme_snapshots
+  const selected = selectedPrivateModelProgrammes(scope)
+  if (!snapshots || !selected.every((code) => snapshots.some((row) => row.programme_code === code))) return null
+  const rows = snapshots.filter((row) => selected.some((code) => code === row.programme_code))
+  const learners = rows.reduce((total, row) => total + row.learners, 0)
+  const capacity = rows.reduce((total, row) => total + row.capacity, 0)
+  return {
+    learners,
+    capacity,
+    remaining_places: capacity - learners,
+    utilisation_percent: capacity > 0 ? Math.round(learners / capacity * 1000) / 10 : null,
+  }
+}
 
 export interface PrivateModelMonth {
   month: string
@@ -34,22 +59,24 @@ export function buildPrivateModel(
   predictive: PredictiveForecastResponse,
   capacity: ForecastResponse,
   assumptions: PrivateModelAssumptions,
+  scope: PrivateModelScope,
 ): PrivateModelMonth[] {
   const months = [...predictive.months].sort()
-  const streamRows = new Map<Workstream, ReturnType<typeof applyPredictiveScenario>>()
+  const programmes = selectedPrivateModelProgrammes(scope)
+  const programmeRows = new Map<string, ReturnType<typeof applyPredictiveScenario>>()
 
-  for (const workstream of reportingWorkstreams) {
-    const rows = predictive.workstream_months.filter((row) => row.workstream === workstream)
-    const duration = predictive.workstream_summaries.find((row) => row.workstream === workstream)?.median_duration_months ?? 18
+  for (const programmeCode of programmes) {
+    const rows = predictive.programme_months.filter((row) => row.programme_code === programmeCode)
+    const duration = predictive.programme_summaries.find((row) => row.programme_code === programmeCode)?.median_duration_months ?? 18
     const drafts: ScenarioDrafts = {}
     for (const row of rows) {
       if (row.month < assumptions.effective_month) continue
       const baselineStarts = predictedStartsAtConfidence(row, 'p80')
-      drafts[scenarioKey(workstream, row.month)] = {
+      drafts[scenarioKey(programmeCode, row.month)] = {
         starters: String(Math.round(baselineStarts * (1 - assumptions.enrolment_drop_percent / 100))),
       }
     }
-    streamRows.set(workstream, applyPredictiveScenario(rows, duration, 'p80', drafts, predictive.movement_rates))
+    programmeRows.set(programmeCode, applyPredictiveScenario(rows, duration, 'p80', drafts, predictive.movement_rates))
   }
 
   let cumulativeBaseline = 0
@@ -62,8 +89,8 @@ export function buildPrivateModel(
     let baselineTutorsRequired = 0
     let scenarioTutorsRequired = 0
 
-    for (const workstream of reportingWorkstreams) {
-      const row = streamRows.get(workstream)?.find((item) => item.month === month)
+    for (const programmeCode of programmes) {
+      const row = programmeRows.get(programmeCode)?.find((item) => item.month === month)
       if (!row) continue
       baselineStarts += row.baselineStarts
       scenarioStarts += row.effectiveStarters
@@ -73,8 +100,8 @@ export function buildPrivateModel(
       scenarioTutorsRequired += Math.ceil(row.revisedActive / assumptions.cohort_size)
     }
 
-    const availableTutors = new Set(capacity.tutor_months
-      .filter((row) => row.month === month && row.capacity > 0 && row.workstream !== 'Operations')
+    const availableTutors = new Set(capacity.tutor_programme_months
+      .filter((row) => row.month === month && row.capacity > 0 && programmes.some((code) => code === row.programme_code))
       .map((row) => row.tutor_id)).size
     const staffedTutors = assumptions.staffed_tutors ?? scenarioTutorsRequired
     const contract = assumptions.average_contract_value

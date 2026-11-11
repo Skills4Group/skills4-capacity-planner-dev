@@ -452,8 +452,12 @@ repository, and must be rotated before 11 August 2027.
 
 ### Private Model workspace
 
-The Private Model tab is a separate, restricted financial stress-test workspace.
-It reads the live Capacity forecast and P80 Predictive Forecasting output, but
+The Private Model tab is a separate, restricted financial stress-test workspace
+for **Pharmacy L2, Pharmacy L3, or both** (both is the default). The view filter
+is local to the viewer; the financial and staffing levers remain shared. Other
+Pharmacy programmes, unclassified Pharmacy demand, and all other workstreams
+are excluded from every private-model snapshot and projection. It reads the live
+Capacity forecast and programme-level P80 Predictive Forecasting output, but
 does **not** change either forecast's calculations. The tab appears only
 when `GET /api/v1/private-model/access` confirms the signed-in Entra user is the
 owner or has an active grant. Its forecast, predictive forecast and assumptions
@@ -461,7 +465,7 @@ endpoints each independently check that permission; hiding the navigation item
 is not the security boundary.
 
 The model has six shared levers: first affected start month, percentage drop in
-**all** new starts (45% default worst case), target learners per tutor (50 default),
+new starts for the selected Pharmacy level(s) (45% default worst case), target learners per tutor (50 default),
 optional fixed number of employed tutors, average total contract value per new
 starter, and monthly tutor cost. Tutor count is blank by default, meaning staffing
 automatically follows each month's calculated requirement. If entered (including
@@ -475,18 +479,18 @@ save shared assumptions. They are stored in the Capacity-owned
 headcount lever. The owner-only
 `PUT /api/v1/private-model/assumptions` endpoint never writes to Attendance.
 
-For each forecast workstream/month, scenario starts equal
+For each selected Pharmacy programme/month, scenario starts equal
 `round(P80 predicted starts * (1 - drop percentage))` from the effective month;
 earlier starts are unchanged. The existing predictive-scenario adjustment carries
-the missing starter cohorts forward for that workstream's median duration, using
+the missing starter cohorts forward for that programme's median duration, using
 the saved BIL/OOF rate from each cohort's start month. It does not reduce existing
-learners afresh or compound the drop every month. This workstream-duration
-approximation may differ from individual future learners' end dates. Operations
-is excluded. The staffing and finance calculations are:
+learners afresh or compound the drop every month. This programme-duration
+approximation may differ from individual future learners' end dates. The staffing
+and finance calculations are:
 
 ```text
-baseline tutors required = sum by workstream ceil(P80 active learners / 50)
-scenario tutors required = sum by workstream ceil(scenario active learners / target cohort size)
+baseline tutors required = sum by selected programme ceil(P80 active learners / 50)
+scenario tutors required = sum by selected programme ceil(scenario active learners / target cohort size)
 scenario tutors employed = fixed tutor lever, or scenario tutors required when blank
 scenario cash in = scenario new starts * average total contract value
 scenario tutor payroll = scenario tutors employed * monthly tutor cost
@@ -497,11 +501,12 @@ coverage gap = max(0, scenario tutors required - scenario tutors employed)
 
 The tab compares baseline and scenario learners, starts, required tutors, cash in,
 payroll and cash margin month by month. Available tutors are distinct tutors with
-positive capacity in the rolling forecast; a hire/surplus figure compares that
+positive allocations to the selected Pharmacy programme(s) in the rolling forecast;
+a tutor allocated to both levels is counted once. A hire/surplus figure compares that
 count with scenario employed tutors. Coverage compares the modelled employed
 number with the calculated requirement and warns when staffing falls short;
 forecast starts and cash receipts are **not** reduced to fit understaffing.
-Because cross-workstream tutor assignments are not jointly optimised, staffing
+Because tutors shared between levels are not jointly optimised, staffing
 figures are indicative. The model assumes the full contract value is collected
 in the start month. Cash received for existing learners before the
 forecast horizon is omitted even though their ongoing tutor cost is included.

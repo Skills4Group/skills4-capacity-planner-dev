@@ -3295,6 +3295,10 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 }
 
 .private-model-card h2 { margin: 6px 0 10px; }
+.private-model-header-actions { display: flex; align-items: end; gap: 12px; }
+.private-model-scope { display: grid; gap: 6px; min-width: 190px; color: #68738a; font-size: 12px; font-weight: 600; }
+.private-model-scope select { min-height: 42px; border: 1px solid #d9dfeb; border-radius: 7px; padding: 8px 10px; background: #fff; color: #12192b; font: inherit; }
+.private-model-scope select:focus { outline: 2px solid #8d55ff; outline-offset: 1px; }
 .private-model-card p:not(.eyebrow) { color: #64718b; }
 .private-model-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
 .private-model-metrics > div { border: 1px solid #d9dfeb; border-radius: 8px; padding: 16px; }
@@ -3344,6 +3348,7 @@ td small { display: block; margin-top: 2px; color: #979eac; font-size: 8px; }
 }
 
 @media (max-width: 560px) {
+  .private-model-header-actions { flex-direction: column; align-items: stretch; }
   .private-model-metrics { grid-template-columns: 1fr; }
   .private-model-controls { grid-template-columns: 1fr; }
 }

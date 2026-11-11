@@ -6,7 +6,7 @@ import type {
   PrivateModelDirectoryResponse,
   PredictiveForecastResponse,
 } from './types'
-import { buildPrivateModel } from './privateModel'
+import { buildPrivateModel, privateModelCurrentSnapshot, selectedPrivateModelProgrammes, type PrivateModelScope } from './privateModel'
 
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
@@ -42,6 +42,7 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
   const [draft, setDraft] = useState<PrivateModelAssumptions | null>(null)
   const [directory, setDirectory] = useState<PrivateModelDirectoryResponse | null>(null)
   const [selectedUserId, setSelectedUserId] = useState('')
+  const [scope, setScope] = useState<PrivateModelScope>('both')
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -95,9 +96,15 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
     )) ?? []
   }, [directory])
 
+  const selectedProgrammes = selectedPrivateModelProgrammes(scope)
+  const programmeDataAvailable = Boolean(predictive && selectedProgrammes.every((code) => (
+    predictive.months.every((month) => predictive.programme_months.some((row) => row.programme_code === code && row.month === month))
+  )))
+  const currentSnapshot = forecast ? privateModelCurrentSnapshot(forecast, scope) : null
   const model = useMemo(() => (
-    forecast && predictive && draft ? buildPrivateModel(predictive, forecast, draft) : []
-  ), [forecast, predictive, draft])
+    forecast && predictive && draft && programmeDataAvailable
+      ? buildPrivateModel(predictive, forecast, draft, scope) : []
+  ), [forecast, predictive, draft, scope, programmeDataAvailable])
   const finalMonth = model.at(-1)
   const scenarioStarts = model.reduce((total, row) => total + row.scenarioStarts, 0)
   const staffedTutorMonths = model.reduce((total, row) => total + row.staffedTutors, 0)
@@ -192,33 +199,34 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
 
   return <>
     <header className="topbar">
-      <div><p className="eyebrow">Restricted workspace</p><h1>Private Model</h1><p className="page-intro">A separate model workspace using live Capacity Tracker data.</p></div>
-      <div className="admin-identity"><span>{access.is_owner ? 'Model owner' : 'Authorised access'}</span><strong>Entra protected</strong></div>
+      <div><p className="eyebrow">Restricted workspace</p><h1>Private Model</h1><p className="page-intro">Pharmacy L2 and L3 financial and staffing scenarios.</p></div>
+      <div className="private-model-header-actions"><label className="private-model-scope"><span>Programme</span><select value={scope} onChange={(event) => setScope(event.target.value as PrivateModelScope)}><option value="both">Pharmacy L2 + L3</option><option value="pharmacy-l2">Pharmacy L2</option><option value="pharmacy-l3">Pharmacy L3</option></select></label><div className="admin-identity"><span>{access.is_owner ? 'Model owner' : 'Authorised access'}</span><strong>Entra protected</strong></div></div>
     </header>
 
     {loading && <section className="private-model-card"><p>Loading private model data…</p></section>}
     {error && <div className="tutor-message error" role="alert">{error}</div>}
+    {predictive && !programmeDataAvailable && <div className="tutor-message error" role="alert">The selected Pharmacy programme forecast is incomplete. No scenario totals are shown until its monthly data is available.</div>}
     {message && <div className="tutor-message success" role="status">{message}</div>}
 
     {forecast && <>
       <section className="private-model-card">
         <p className="eyebrow">Shared data foundation</p>
-        <h2>Current Capacity snapshot</h2>
-        <p>This tab reads the same live forecast source as the Capacity report. We can define and build the new model here without changing the current calculations.</p>
+        <h2>Current Pharmacy snapshot</h2>
+        <p>Only the selected Pharmacy level{scope === 'both' ? 's' : ''} appear here. This tab reads the live Capacity forecast without changing its calculations.</p>
         <div className="private-model-metrics">
-          <div><span>Current learners</span><strong>{forecast.current_total_snapshot?.learners.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Count of capacity-consuming learners today</small></div>
-          <div><span>Available tutor places</span><strong>{forecast.current_total_snapshot?.remaining_places.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Current tutor capacity − current learners</small></div>
-          <div><span>Reporting workstreams</span><strong>{forecast.current_workstream_snapshots?.length ?? 0}</strong><small className="private-model-formula">Distinct reporting streams, excluding Operations</small></div>
+          <div><span>Current learners</span><strong>{currentSnapshot?.learners.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Capacity-consuming learners in the selected level{scope === 'both' ? 's' : ''} today</small></div>
+          <div><span>Available tutor places</span><strong>{currentSnapshot?.remaining_places.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Selected programme capacity − current learners</small></div>
+          <div><span>Programmes in model</span><strong>{selectedProgrammes.length}</strong><small className="private-model-formula">{scope === 'both' ? 'Pharmacy L2 and L3' : scope === 'pharmacy-l2' ? 'Pharmacy L2' : 'Pharmacy L3'}</small></div>
           <div><span>Data generated</span><strong>{formatDate(forecast.generated_at)}</strong><small className="private-model-formula">Date of the live Capacity snapshot</small></div>
         </div>
       </section>
     </>}
 
-    {draft && predictive && <>
+    {draft && predictive && programmeDataAvailable && <>
       <section className="private-model-card">
         <p className="eyebrow">Worst-case enrolment scenario</p>
         <h2>Model levers</h2>
-        <p>From the selected month, reduce all forecast new starts by the chosen percentage. Existing learners remain until their forecast exit. Changes preview immediately; only the model owner can save the shared assumptions.</p>
+        <p>From the selected month, reduce new starts in the selected Pharmacy level{scope === 'both' ? 's' : ''} by the chosen percentage. Existing learners remain until their forecast exit. Changes preview immediately; only the model owner can save the shared assumptions.</p>
         <div className="private-model-controls">
           <label><span>Scenario begins</span><select value={draft.effective_month} onChange={(event) => setDraft({ ...draft, effective_month: event.target.value })}>{!predictive.months.includes(draft.effective_month) && <option value={draft.effective_month}>{formatMonth(draft.effective_month)}</option>}{predictive.months.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}</select></label>
           <label><span>New-start drop (%)</span><input type="number" min="0" max="100" step="1" value={draft.enrolment_drop_percent} onChange={(event) => setDraft({ ...draft, enrolment_drop_percent: Math.min(100, Math.max(0, Number(event.target.value))) })} /></label>
@@ -227,7 +235,7 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
           <label><span>Contract value per starter (£)</span><input type="number" min="0" max="1000000" step="0.01" value={draft.average_contract_value ?? ''} placeholder="Enter amount" onChange={(event) => setDraft({ ...draft, average_contract_value: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></label>
           <label><span>Monthly tutor cost (£)</span><input type="number" min="0" max="1000000" step="0.01" value={draft.monthly_tutor_cost ?? ''} placeholder="Enter amount" onChange={(event) => setDraft({ ...draft, monthly_tutor_cost: event.target.value === '' ? null : Math.max(0, Number(event.target.value)) })} /></label>
         </div>
-        <p className="private-model-note">Leave tutor count blank to staff each month at the calculated requirement. Enter a number to hold employed tutor headcount fixed across the whole forecast; this changes payroll and coverage, not predicted enrolments.</p>
+        <p className="private-model-note">Leave tutor count blank to staff each month at the calculated requirement. Enter a number to hold employed tutor headcount fixed across the selected Pharmacy level{scope === 'both' ? 's' : ''}; this changes payroll and coverage, not predicted enrolments. The saved tutor-count lever is shared across all three views.</p>
         <div className="private-model-actions">
           {access.is_owner && <button className="settings-primary-button" type="button" disabled={!hasUnsavedChanges || savingId !== null} onClick={() => void saveAssumptions()}>{savingId === 'assumptions' ? 'Saving…' : 'Save shared assumptions'}</button>}
           {hasUnsavedChanges && <span>Previewing unsaved changes</span>}
@@ -242,7 +250,7 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
           <div><span>Scenario cash in</span><strong>{formatMoney(scenarioCashIn)}</strong><small className="private-model-formula">{scenarioStarts.toLocaleString('en-GB')} starts × {formatMoney(draft.average_contract_value)} per contract</small></div>
           <div><span>Scenario tutor payroll</span><strong>{formatMoney(scenarioPayroll)}</strong><small className="private-model-formula">{staffedTutorMonths.toLocaleString('en-GB')} staffed tutor-months × {formatMoney(draft.monthly_tutor_cost)}</small></div>
           <div><span>Cumulative cash margin</span><strong>{formatMoney(finalMonth?.cumulativeScenarioMargin)}</strong><small className="private-model-formula">{formatMoney(scenarioCashIn)} cash in − {formatMoney(scenarioPayroll)} payroll</small></div>
-          <div><span>Last-month tutors required</span><strong>{finalMonth?.scenarioTutorsRequired.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Σ ceil(workstream learners ÷ {draft.cohort_size} cohort size)</small></div>
+          <div><span>Last-month tutors required</span><strong>{finalMonth?.scenarioTutorsRequired.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">Σ ceil(selected programme learners ÷ {draft.cohort_size} cohort size)</small></div>
           <div><span>Last-month tutors employed</span><strong>{finalMonth?.staffedTutors.toLocaleString('en-GB') ?? '—'}</strong><small className="private-model-formula">{draft.staffed_tutors === null ? 'Auto = tutors required' : `Fixed tutor lever = ${draft.staffed_tutors}`}</small></div>
           <div><span>Margin change vs baseline</span><strong className={marginChange !== null && marginChange < 0 ? 'private-model-negative' : ''}>{marginChange === null ? '—' : `${marginChange > 0 ? '+' : ''}${currencyFormatter.format(marginChange)}`}</strong><small className="private-model-formula">{formatMoney(finalMonth?.cumulativeScenarioMargin)} scenario − {formatMoney(finalMonth?.cumulativeBaselineMargin)} baseline</small></div>
         </div>
@@ -260,11 +268,11 @@ export function PrivateModelView({ access }: { access: PrivateModelAccessRespons
 
       <section className="private-model-card">
         <p className="eyebrow">Monthly detail</p><h2>Baseline versus scenario</h2>
-        <p>The baseline is the unshocked P80 forecast at a 50-learner target, not actual payroll. Required tutors are rounded within each workstream. Available tutors are distinct people in the Capacity forecast; cross-workstream teaching is not jointly optimised in this first version.</p>
+        <p>The baseline is the unshocked P80 forecast at a 50-learner target, not actual payroll. Required tutors are rounded separately for L2 and L3 when both are selected. Available tutors are distinct people with positive allocations to the selected programme(s); a tutor teaching both counts once. Shared tutors are not jointly optimised in this version.</p>
         <div className="private-model-table-wrap"><table className="private-model-table"><thead><tr><th>Month</th><th>Starts<br />base → scenario</th><th>Active learners<br />base → scenario</th><th>Tutors required<br />base → scenario</th><th>Available<br />tutors</th><th>Staffed<br />tutors</th><th>Coverage</th><th>Change vs<br />available</th><th>Cash in<br />base → scenario</th><th>Tutor payroll<br />base → scenario</th><th>Cash margin<br />base → scenario</th><th>Cumulative margin<br />base → scenario</th></tr></thead><tbody>
           {model.map((row) => <tr key={row.month}><th scope="row">{formatMonth(row.month)}</th><td>{row.baselineStarts} → <strong>{row.scenarioStarts}</strong></td><td>{row.baselineActive} → <strong>{row.scenarioActive}</strong></td><td>{row.baselineTutorsRequired} → <strong>{row.scenarioTutorsRequired}</strong></td><td>{row.availableTutors}</td><td><strong>{row.staffedTutors}</strong></td><td className={row.additionalTutors ? 'private-model-negative' : ''}>{row.additionalTutors ? `${row.additionalTutors} short` : row.potentialSurplus ? `${row.potentialSurplus} spare` : 'Covered'}</td><td>{row.headcountChange > 0 ? '+' : ''}{row.headcountChange}</td><td>{formatMoney(row.baselineCashIn)} → <strong>{formatMoney(row.scenarioCashIn)}</strong></td><td>{formatMoney(row.baselinePayroll)} → <strong>{formatMoney(row.scenarioPayroll)}</strong></td><td className={row.scenarioMargin !== null && row.scenarioMargin < 0 ? 'private-model-negative' : ''}>{formatMoney(row.baselineMargin)} → <strong>{formatMoney(row.scenarioMargin)}</strong></td><td className={row.cumulativeScenarioMargin !== null && row.cumulativeScenarioMargin < 0 ? 'private-model-negative' : ''}>{formatMoney(row.cumulativeBaselineMargin)} → <strong>{formatMoney(row.cumulativeScenarioMargin)}</strong></td></tr>)}
         </tbody></table></div>
-        <p className="private-model-note">Cash in assumes the full contract value is collected in the start month. Cash already collected for existing learners before this forecast is not included, although their tutor cost is; absolute margin is therefore not accounting profit. Payroll follows the entered fixed tutor count or, if blank, the calculated monthly requirement. The scenario uses workstream-average durations, so individual future starters may finish at different dates. Technology, overhead, collection risk and other costs are not included.</p>
+        <p className="private-model-note">Cash in assumes the full contract value is collected in the start month. Cash already collected for existing learners before this forecast is not included, although their tutor cost is; absolute margin is therefore not accounting profit. Payroll follows the entered fixed tutor count or, if blank, the calculated monthly requirement. The scenario uses programme-specific typical durations, so individual future starters may finish at different dates. Other Pharmacy programmes, unclassified Pharmacy demand, other workstreams, technology, overhead, collection risk and other costs are not included.</p>
       </section>
     </>}
 
